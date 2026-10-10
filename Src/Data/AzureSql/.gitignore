@@ -1,0 +1,5 @@
+Packaging/bin/
+Packaging/obj/
+Packaging/.nuget/
+Packaging/.appdata/
+PowerShell/dependencies/

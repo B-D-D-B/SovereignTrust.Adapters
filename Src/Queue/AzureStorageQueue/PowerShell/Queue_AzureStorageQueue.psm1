@@ -1,4 +1,17 @@
 using module SignalGraph
+<#
+Path filters accept PowerShell-style parameters or key/value pairs, with or
+without parentheses or brackets. Quotes are only required for values containing
+spaces or separators.
+
+Examples:
+    EnrollMe -Name Plan -Type Json
+    EnrollMe Name=Plan, Type=Json
+    EnrollMe -Name "ABC Project" -Type Json
+    EnrollMe(-Name "ABC Project" -Type Json)
+    EnrollMe[Name="ABC Project", Type=Json]
+#>
+
 $stModuleName = 'SovereignTrust.Foundation'
 if (-not (Get-Module -Name $stModuleName)) {
     $stPath = Join-Path $PSScriptRoot "../../../../../SovereignTrust.Foundation/Src/PowerShell/SovereignTrust.Foundation.psd1"
@@ -49,26 +62,137 @@ class Queue_AzureStorageQueue {
 
 
     [object] ConvertKvpBlockToObject([string]$KvpBlock) {
+        $values = [ordered]@{}
+        $position = 0
 
-        # "Name=Plan, Type=Json" -> "Name=Plan`nType=Json" -> hashtable
-        $stringData = (($KvpBlock -split '\s*,\s*') -join "`n") -replace '\s*=\s*', '='
-        $ht = $stringData | ConvertFrom-StringData
-
-        # optional: strip surrounding quotes on values
-        foreach ($k in @($ht.Keys)) {
-            $v = [string]$ht[$k]  
-
-
-            if (
-                ($v.StartsWith('"') -and $v.EndsWith('"')) -or
-                ($v.StartsWith("'") -and $v.EndsWith("'"))
+        while ($position -lt $KvpBlock.Length) {
+            # Parameter pairs may be separated by whitespace, commas, or both.
+            while (
+                $position -lt $KvpBlock.Length -and
+                ([char]::IsWhiteSpace($KvpBlock[$position]) -or $KvpBlock[$position] -eq ',')
             ) {
-                $ht[$k] = $v.Substring(1, $v.Length - 2)
+                $position++
             }
+
+            if ($position -ge $KvpBlock.Length) {
+                break
+            }
+
+            $dashSyntax = $KvpBlock[$position] -eq '-'
+            if ($dashSyntax) {
+                $position++
+            }
+
+            $keyStart = $position
+            while (
+                $position -lt $KvpBlock.Length -and
+                "$($KvpBlock[$position])" -match '[A-Za-z0-9_.-]'
+            ) {
+                $position++
+            }
+
+            if ($position -eq $keyStart) {
+                throw "Invalid filter parameter near '$($KvpBlock.Substring($position))'."
+            }
+
+            $key = $KvpBlock.Substring($keyStart, $position - $keyStart)
+            $hadWhitespace = $false
+
+            while ($position -lt $KvpBlock.Length -and [char]::IsWhiteSpace($KvpBlock[$position])) {
+                $hadWhitespace = $true
+                $position++
+            }
+
+            if ($position -lt $KvpBlock.Length -and $KvpBlock[$position] -eq '=') {
+                $position++
+            }
+            elseif (-not $dashSyntax -or -not $hadWhitespace) {
+                throw "Filter parameter '$key' must use '$key=value' or '-$key value' syntax."
+            }
+
+            while ($position -lt $KvpBlock.Length -and [char]::IsWhiteSpace($KvpBlock[$position])) {
+                $position++
+            }
+
+            if ($position -ge $KvpBlock.Length) {
+                throw "Filter parameter '$key' does not have a value."
+            }
+
+            $value = $null
+            if ($KvpBlock[$position] -eq '"' -or $KvpBlock[$position] -eq "'") {
+                $quote = $KvpBlock[$position]
+                $position++
+                $builder = [System.Text.StringBuilder]::new()
+                $closedQuote = $false
+
+                while ($position -lt $KvpBlock.Length) {
+                    $character = $KvpBlock[$position]
+
+                    if ($character -eq $quote) {
+                        if (
+                            $position + 1 -lt $KvpBlock.Length -and
+                            $KvpBlock[$position + 1] -eq $quote
+                        ) {
+                            $null = $builder.Append($quote)
+                            $position += 2
+                            continue
+                        }
+
+                        $closedQuote = $true
+                        $position++
+                        break
+                    }
+
+                    $null = $builder.Append($character)
+                    $position++
+                }
+
+                if (-not $closedQuote) {
+                    throw "Filter parameter '$key' has an unterminated quoted value."
+                }
+
+                $value = $builder.ToString()
+            }
+            else {
+                $valueStart = $position
+
+                while ($position -lt $KvpBlock.Length) {
+                    if ($KvpBlock[$position] -eq ',') {
+                        break
+                    }
+
+                    if ([char]::IsWhiteSpace($KvpBlock[$position])) {
+                        $nextPosition = $position
+                        while (
+                            $nextPosition -lt $KvpBlock.Length -and
+                            [char]::IsWhiteSpace($KvpBlock[$nextPosition])
+                        ) {
+                            $nextPosition++
+                        }
+
+                        if (
+                            $nextPosition -lt $KvpBlock.Length -and
+                            $KvpBlock[$nextPosition] -eq '-'
+                        ) {
+                            break
+                        }
+                    }
+
+                    $position++
+                }
+
+                $value = $KvpBlock.Substring($valueStart, $position - $valueStart).Trim()
+            }
+
+            if ([string]::IsNullOrWhiteSpace($value)) {
+                throw "Filter parameter '$key' does not have a value."
+            }
+
+            $values[$key] = $value
         }
 
-        # your requirement: make JSON then ConvertFrom-Json
-        return ($ht | ConvertTo-Json -Compress) | ConvertFrom-Json
+        # Keep the existing PSCustomObject return contract.
+        return ($values | ConvertTo-Json -Compress) | ConvertFrom-Json
     }
 
     [pscustomobject] ParsePathWithOptionalFilter([string]$Path) {
@@ -85,6 +209,10 @@ class Queue_AzureStorageQueue {
                 $filters += $this.ConvertKvpBlockToObject($matches.kvp)
             }
             elseif ($s -match '^(?<name>[^()]+)\((?<kvp>[^)]*)\)$') {
+                $clean += $matches.name.Trim()
+                $filters += $this.ConvertKvpBlockToObject($matches.kvp)
+            }
+            elseif ($s -match '^(?<name>\S+)\s+(?<kvp>(?:-[A-Za-z0-9_.-]+(?:\s+|=)|[A-Za-z0-9_.-]+\s*=).+)$') {
                 $clean += $matches.name.Trim()
                 $filters += $this.ConvertKvpBlockToObject($matches.kvp)
             }

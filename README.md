@@ -66,9 +66,14 @@ $graph.RegisterResultAsSignal("Storage", $adapterInstance)
 
 ---
 
+## Ownership and collaboration
+
+BDDB LLC is the current copyright holder for the rights it owns in this project. Silicon Dream Artists SPC collaborates on the project. Licensed under MIT.
+
 ## 📜 License
 
-MIT License • © 2025 Silicon Dream Artists (SDA) / BDDB  
+MIT License • © 2025 Silicon Dream Artists (SDA)
+
 See `LICENSE` for full terms.
 
 ---
