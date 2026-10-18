@@ -1,0 +1,11 @@
+# Azure Data Explorer Data provider
+
+## Activities
+
+`Admin` is implemented for reviewed Kusto management text. `Query` and `Delete` are not implemented; `WriteItem` and `WriteBatch` are legacy, unverified branches and must not be treated as supported ADX behavior.
+
+`Admin` accepts `Plan.Config.CommandText` as one nonblank string beginning with `.`. The constructed adapter jacket supplies the single HTTPS engine address and database resource. The engine host must have a regional `*.kusto.windows.net` form. Caller-supplied URL, token, database, method, or legacy expected-target fields are rejected before token acquisition. The caller is responsible for reviewing the entire command and registered target; this provider does not parse or sandbox Kusto.
+
+The provider obtains a bearer token through the existing Azure CLI resolver for `https://api.kusto.windows.net` and sends one `POST` to the engine `/v1/rest/mgmt` endpoint. It does not retry or follow redirects. Before live use, the operator must prove the Azure CLI principal object ID and tenant match the designated ST identity and confirm database permissions. No current ST Admin slot is bound to an approved live target.
+
+On a complete 2xx response with valid ADX v1 tables and no in-band failure, the successful Signal result is JSON text: `{ "Operation": "Admin", "Tables": [...] }`. Table names, column metadata, and ordered rows are preserved. An empty table set is valid but does not prove a state change. Non-2xx, malformed/partial responses, timeout or transport failure yield a failed Signal without a result and only a sanitized category and correlation ID. A send failure can leave the service outcome unknown; observe catalog state separately before any further mutation. The provider promises no transaction or rollback.

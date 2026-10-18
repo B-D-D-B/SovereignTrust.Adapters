@@ -30,7 +30,7 @@ CompanyName = 'Silicon Dream Artists'
 Copyright = '(c) Silicon Dream Artists. Current copyright holder: BDDB LLC.'
 
 # Description of the functionality provided by this module
-Description = 'Native PowerShell implementation for the Azure Key Vault Storage Adapter.'
+Description = 'Mapped Microsoft Foundry network adapter with OpenAI Responses support.'
 
 # Minimum version of the PowerShell engine required by this module
 PowerShellVersion = '5.1'

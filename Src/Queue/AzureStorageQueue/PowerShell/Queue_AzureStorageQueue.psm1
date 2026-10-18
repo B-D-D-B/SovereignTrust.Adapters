@@ -226,6 +226,18 @@ class Queue_AzureStorageQueue {
             Filters = $filters
         }
     }    
+    hidden [System.Xml.XmlDocument] NormalizeXmlResponse([object]$response) {
+        if ($response -is [System.Xml.XmlDocument]) { return $response }
+        if ($response -is [System.Xml.XmlElement]) { return $response.OwnerDocument }
+        if ($response -is [string]) {
+            if ($response.Length -gt 0 -and $response[0] -eq [char]0xFEFF) { $response = $response.Substring(1) }
+            $document = [System.Xml.XmlDocument]::new()
+            $document.LoadXml($response)
+            return $document
+        }
+        throw "Unsupported Queue XML response type: $($response.GetType().FullName)"
+    }
+
     # ---------------------------------------------------------------------
     # Universal Invoke entry 
     # Activity uses canonical verb set: ReadBatch, PeekBatch, AckItem, DeferItem, WriteItem
@@ -278,8 +290,14 @@ class Queue_AzureStorageQueue {
                 }
 
                 "HandleMessage" {
-                    $MessageTextSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.MessageText" | Select-Object -Last 1
-                    if ($opSignal.MergeSignalAndVerifyFailure($MessageTextSignal)) { return $opSignal }
+                    $MessageTextSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.MessageText" -Default $null -SignalLevel "Information" | Select-Object -Last 1
+                    if (-not $MessageTextSignal.HasResult() -or [string]::IsNullOrWhiteSpace([string]$MessageTextSignal.GetResult())) {
+                        $MessageTextSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.MessageText" -Default $null -SignalLevel "Information" | Select-Object -Last 1
+                    }
+                    if ($opSignal.MergeSignalAndVerifyFailure($MessageTextSignal) -or -not $MessageTextSignal.HasResult()) {
+                        $opSignal.LogCritical("HandleMessage requires message text in the item jacket or Config.MessageText.")
+                        return $opSignal
+                    }
                     $MessageText = $MessageTextSignal.GetResult()
                     $text = ([string]$MessageText).Trim()
 
@@ -344,6 +362,8 @@ class Queue_AzureStorageQueue {
                         Path     = "*.#.$channelId"
                         Activity = "RequestOrRegister"
                     }
+
+                    $opSignal.SetResult($messageItem)
 
                     $SessionItemResult = [PSCustomObject]@{
                         Id    = $channelId
@@ -475,38 +495,24 @@ class Queue_AzureStorageQueue {
                     #>
                     
                     # Now delete Item
-                    $deleteResultSignal = $this.Invoke($Slot, "AckItem", $ConductionSignal, $Plan, $ItemSignal)
-                    $opSignal.MergeSignal($deleteResultSignal)
+                    # Make Conditional
+                    #$deleteResultSignal = $this.Invoke($Slot, "AckItem", $ConductionSignal, $Plan, $ItemSignal)
+                    #$opSignal.MergeSignal($deleteResultSignal)
 
                     break
                 }
 
                 "ReadBatch" {
-                    $PeekUntilEmptySignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "PeekUntilEmpty" -Default $true | Select-Object -Last 1
-                    $PeekUntilEmpty = [boolean]$PeekUntilEmptySignal.GetResult()
-
                     $peekDepthSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.PeekDepth" -Default 1 | Select-Object -Last 1
                     $peekDepth = [int]$peekDepthSignal.GetResult()
-
                     $VisibilitytimeoutSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Visibilitytimeout" -Default 10 | Select-Object -Last 1
                     $Visibilitytimeout = [int]$VisibilitytimeoutSignal.GetResult()
-
-
-                    $MaxParallelismSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "MaxParallelism" -Default 1 | Select-Object -Last 1
-                    $MaxParallelism = [int]$MaxParallelismSignal.GetResult()
-
-                    $parallelSupport = $MaxParallelism -gt 1
-
-                    $Dequeue = $true
-                    $querystring = if ($Dequeue) {
-                        "?numofmessages=$peekDepth&visibilitytimeout=$Visibilitytimeout"
+                    if ($peekDepth -lt 1 -or $peekDepth -gt 32 -or $Visibilitytimeout -lt 1) {
+                        $opSignal.LogCritical("Invalid ReadBatch depth or visibility timeout.")
+                        return $opSignal
                     }
-                    else {
-                        "?peekonly=true&numofmessages=$peekDepth"
-                    }
-
                     $clonePlan = (Resolve-ClonePlan -Plan $Plan | Select-Object -Last 1).GetResult()
-                    Add-PathToDictionary -Dictionary $clonePlan -Path "QueryString" -Value $querystring
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Querystring" -Value "?numofmessages=$peekDepth&visibilitytimeout=$Visibilitytimeout"
 
                     $HostSignal = Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Addresses" | Select-Object -Last 1
                     $HostAddress = $HostSignal.GetResult()
@@ -515,40 +521,93 @@ class Queue_AzureStorageQueue {
                     $Uri = $UriSignal.GetResult()
 
                     $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Uri" -Value "$HostAddress/$Uri"
-                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Host" -Value "$HostAddress"
                     $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Host" -Value "https://storage.azure.com/"
                     $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.CacheAccessToken" -Value $true
-
-                    $responseJacketSignal = [Signal]::Start("Queue_AzureStorageQueue.Invoke:$Slot.$Activity.Jacket", $ItemSignal) | Select-Object -Last 1
-
-                    # Call Rest Endpoint
-                    $responseSignal = Invoke-MappedAdapter -Adapter "Condenser.Rest" -Activity "Get" -Signal $ConductionSignal -Plan $clonePlan -ItemSignal $ItemSignal
+                    $responseSignal = Invoke-MappedAdapter -Adapter "Condenser.Rest" -Activity "Get" -Signal $ConductionSignal -Plan $clonePlan -ItemSignal $ItemSignal | Select-Object -Last 1
                     if ($opSignal.MergeSignalAndVerifyFailure($responseSignal)) { return $opSignal }
-                    $responseJacketSignal.SetJacket($responseSignal)
-                    
-                    # Format As Xml
-                    $formatResultSignal = Invoke-CondenserAdapter -Slot "Format" -Activity "Xml" -Plan $Plan -Signal $ConductionSignal -ItemSignal $responseJacketSignal | Select-Object -Last 1
-                    if ($opSignal.MergeSignalAndVerifyFailure($formatResultSignal)) { return $opSignal }
-                    $responseJacketSignal.SetJacket($formatResultSignal)
-
-                    # Transform - Select Path to get Messages as array of strings
-                    $transformResultSignal = Invoke-CondenserAdapter -Slot "Transform" -Activity "Select" -Plan $Plan -Signal $ConductionSignal -ItemSignal $responseJacketSignal | Select-Object -Last 1
-                    if ($opSignal.MergeSignalAndVerifyFailure($transformResultSignal) -or (-not $transformResultSignal.HasResult())) { return $opSignal }
-                    $responseJacketSignal.SetJacket($transformResultSignal)
-
-                    $result = @($responseJacketSignal.GetJacket().GetResult($true) ?? [PSCustomObject]@{})
-                    # Set the result value from the rest endpoint
-                    $opSignal.SetResult($result)
+                    if (-not $responseSignal.HasResult()) {
+                        $opSignal.LogCritical("ReadBatch returned no XML response.")
+                        return $opSignal
+                    }
+                    try { $responseXml = $this.NormalizeXmlResponse($responseSignal.GetResult()) }
+                    catch {
+                        $opSignal.LogCritical("ReadBatch response is not valid XML: $($_.Exception.Message)")
+                        return $opSignal
+                    }
+                    if ($null -eq $responseXml) {
+                        $opSignal.LogCritical("ReadBatch returned no XML document.")
+                        return $opSignal
+                    }
+                    $root = $responseXml.SelectSingleNode('/QueueMessagesList')
+                    if ($null -eq $root) {
+                        $opSignal.LogCritical("ReadBatch response is not a QueueMessagesList.")
+                        return $opSignal
+                    }
+                    $messages = @()
+                    foreach ($node in @($root.SelectNodes('QueueMessage'))) {
+                        $messageId = [string]$node.SelectSingleNode('MessageId').InnerText
+                        $popReceipt = [string]$node.SelectSingleNode('PopReceipt').InnerText
+                        $messageText = [string]$node.SelectSingleNode('MessageText').InnerText
+                        if ([string]::IsNullOrWhiteSpace($messageId) -or [string]::IsNullOrWhiteSpace($popReceipt)) {
+                            $opSignal.LogCritical("ReadBatch message identity is incomplete.")
+                            return $opSignal
+                        }
+                        $messages += [pscustomobject]@{ MessageId = $messageId; PopReceipt = $popReceipt; MessageText = $messageText }
+                    }
+                    $opSignal.SetResult($messages)
 
                     break
                 }
 
                 "WriteItem" {
-                    # Plan should contain the payload to write
-                    # e.g. Plan.MessageText or Plan.Payload etc.
-                    # Placeholder: wire to your Write-StorageQueueApi when available.
-                    $opSignal.LogWarning("WriteItem not implemented yet (wire to Write-StorageQueueApi).")
-                    $resultSignal = [Signal]::Start("StorageQueue.WriteItem.Unresolved", $ItemSignal) | Select-Object -Last 1
+                    $textSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.MessageText" | Select-Object -Last 1
+                    $messageText = $textSignal.HasResult() ? $textSignal.GetResult() : $null
+                    if ($messageText -is [PSCustomObject] -or $messageText -is [hashtable]) {
+                            $messageText = $textSignal.GetResult() | ConvertTo-Json -Depth 10
+                     }
+                     elseif ([string]::IsNullOrWhiteSpace($messageText)) {
+                        $opSignal.LogCritical("WriteItem requires Config.MessageText.")
+                        return $opSignal
+                    }
+                    
+                    $hostAddress = (Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Addresses" | Select-Object -Last 1).GetResult()
+                    $resource = (Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Resource" | Select-Object -Last 1).GetResult()
+                    $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($messageText))
+                    $body = "<QueueMessage><MessageText>$encoded</MessageText></QueueMessage>"
+                    $clonePlan = (Resolve-ClonePlan -Plan $Plan | Select-Object -Last 1).GetResult()
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Uri" -Value "$hostAddress/$resource"
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Host" -Value "https://storage.azure.com/"
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Method" -Value "Post"
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.ContentType" -Value "application/xml; charset=utf-8"
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Body" -Value $body
+                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.CacheAccessToken" -Value $true
+                    $responseSignal = Invoke-MappedAdapter -Adapter "Condenser.Rest" -Activity "Post" -Signal $ConductionSignal -Plan $clonePlan -ItemSignal $ItemSignal | Select-Object -Last 1
+                    if ($opSignal.MergeSignalAndVerifyFailure($responseSignal)) { return $opSignal }
+                    if (-not $responseSignal.HasResult()) {
+                        $opSignal.LogCritical("WriteItem returned no response.")
+                        return $opSignal
+                    }
+                    try { $responseXml = $this.NormalizeXmlResponse($responseSignal.GetResult()) }
+                    catch {
+                        $opSignal.LogCritical("WriteItem response is not valid XML: $($_.Exception.Message)")
+                        return $opSignal
+                    }
+                    if ($null -eq $responseXml) {
+                        $opSignal.LogCritical("WriteItem returned no XML document.")
+                        return $opSignal
+                    }
+                    $node = $responseXml.SelectSingleNode('/QueueMessagesList/QueueMessage')
+                    if ($null -eq $node -or $null -eq $node.SelectSingleNode('MessageId') -or $null -eq $node.SelectSingleNode('PopReceipt')) {
+                        $opSignal.LogCritical("WriteItem response did not contain message identity.")
+                        return $opSignal
+                    }
+                    $messageId = [string]$node.SelectSingleNode('MessageId').InnerText
+                    $popReceipt = [string]$node.SelectSingleNode('PopReceipt').InnerText
+                    if ([string]::IsNullOrWhiteSpace($messageId) -or [string]::IsNullOrWhiteSpace($popReceipt)) {
+                        $opSignal.LogCritical("WriteItem response message identity is empty.")
+                        return $opSignal
+                    }
+                    $opSignal.SetResult([pscustomobject]@{ MessageId = $messageId; PopReceipt = $popReceipt })
                     break
                 }
 
@@ -556,18 +615,28 @@ class Queue_AzureStorageQueue {
                     # Ack = delete message. Needs MessageId + PopReceipt.
                     # Expect the message to be in ItemSignal jacket/result depending on your pipeline.
 
-                    $MessageIdSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.MessageId" | Select-Object -Last 1
-                    $PopReceiptSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.PopReceipt" | Select-Object -Last 1
+                    $MessageIdSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.MessageId" -SignalLevel "Information" | Select-Object -Last 1
+                    $PopReceiptSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.PopReceipt" -SignalLevel "Information" | Select-Object -Last 1
+                    if (-not $MessageIdSignal.HasResult()) {
+                        $MessageIdSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.MessageId" | Select-Object -Last 1
+                    }
+                    if (-not $PopReceiptSignal.HasResult()) {
+                        $PopReceiptSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.PopReceipt" | Select-Object -Last 1
+                    }
 
                     $MessageId = $MessageIdSignal.GetResult()
                     $PopReceipt = $PopReceiptSignal.GetResult()
+                    if ([string]::IsNullOrWhiteSpace([string]$MessageId) -or [string]::IsNullOrWhiteSpace([string]$PopReceipt)) {
+                        $opSignal.LogCritical("AckItem requires MessageId and PopReceipt.")
+                        return $opSignal
+                    }
                     
                     # DELETE {ServiceUrl}/{MessageId}?popreceipt={PopReceipt}
-                    $querystring = "/{0}?popreceipt={1}" -f $MessageId, [Uri]::EscapeDataString($PopReceipt)
+                    $querystring = "?popreceipt={0}" -f [Uri]::EscapeDataString($PopReceipt)
 
                     try {
                         $clonePlan = (Resolve-ClonePlan -Plan $Plan | Select-Object -Last 1).GetResult()
-                        Add-PathToDictionary -Dictionary $clonePlan -Path "Config.QueryString" -Value $querystring
+                        $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.QueryString" -Value $querystring
 
                         $HostSignal = Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Addresses" -Default 1 | Select-Object -Last 1
                         $HostAddress = $HostSignal.GetResult()
@@ -575,21 +644,19 @@ class Queue_AzureStorageQueue {
                         $UriSignal = Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Resource" -Default 1 | Select-Object -Last 1
                         $Uri = $UriSignal.GetResult()
 
-                        $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Uri" -Value "$HostAddress/$Uri"
-                        $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Host" -Value "$HostAddress"
+                        $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Uri" -Value "$HostAddress/$Uri/$MessageId"
+                        $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Host" -Value "https://storage.azure.com/"
                         $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Method" -Value "Delete"
                         $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.CacheAccessToken" -Value $true
 
-                        $responseJacketSignal = [Signal]::Start("Queue_AzureStorageQueue.Invoke:$Slot.$Activity.Jacket", $ItemSignal) | Select-Object -Last 1
-
-                        $responseSignal = Invoke-MappedAdapter -Adapter "Condenser.Rest" -Activity "Delete" -Signal $ConductionSignal -Plan $clonePlan -ItemSignal $ItemSignal
+                        $responseSignal = Invoke-MappedAdapter -Adapter "Condenser.Rest" -Activity "Delete" -Signal $ConductionSignal -Plan $clonePlan -ItemSignal $ItemSignal | Select-Object -Last 1
                         if ($opSignal.MergeSignalAndVerifyFailure($responseSignal)) { return $opSignal }
                     }
                     catch {
                         throw "Delete-StorageQueueApi: Failed to delete message id '$MessageId'. $($_.Exception.Message)"
                     }
 
-                    $resultSignal = [Signal]::Start("StorageQueue.AckItem.Unresolved", $ItemSignal) | Select-Object -Last 1
+                    $opSignal.SetResult($true)
                     break
                 }
 

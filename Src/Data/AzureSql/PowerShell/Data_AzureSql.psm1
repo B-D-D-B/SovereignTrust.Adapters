@@ -17,6 +17,7 @@ if (-not (Get-Module -Name $foundationModuleName)) {
 . "$PSScriptRoot/Invoke-AzureSqlWrite.ps1"
 . "$PSScriptRoot/Invoke-AzureSqlQuery.ps1"
 . "$PSScriptRoot/Invoke-AzureSqlDelete.ps1"
+. "$PSScriptRoot/Invoke-AzureSqlAdmin.ps1"
 . "$PSScriptRoot/Invoke-Data_AzureSql.ps1"
 . "$PSScriptRoot/Data_AzureSql.ps1"
 

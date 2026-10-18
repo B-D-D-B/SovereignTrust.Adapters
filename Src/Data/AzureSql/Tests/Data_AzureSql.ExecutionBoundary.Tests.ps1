@@ -127,6 +127,8 @@ class AzureSqlTestTransaction : System.IDisposable {
     [void] Dispose() { $this.Disposed = $true; $null = $this.Session.Events.Add('transaction dispose') }
 }
 class AzureSqlTestSession : System.IDisposable {
+    [string]$DataSource = 'reviewed.database.windows.net'
+    [string]$Database = 'reviewed_db'
     [object]$Command
     [object]$Transaction
     [System.Collections.ArrayList]$Events = [System.Collections.ArrayList]::new()
@@ -199,7 +201,7 @@ $module = Get-Module Data_AzureSql
     $script:TestSessions = [System.Collections.Generic.Queue[object]]::new()
     Set-Item Function:script:New-AzureSqlSession -Value {
         param($Adapter)
-        if ($Adapter.Configuration.Resource -ne 'synthetic-resource') { throw 'Hydrated jacket did not reach factory.' }
+        if ($Adapter.Configuration.Resource -ne 'reviewed_db' -or $Adapter.Configuration.Addresses[0] -ne 'reviewed.database.windows.net') { throw 'Hydrated jacket did not reach factory.' }
         return $script:TestSessions.Dequeue()
     }
 }
@@ -214,7 +216,7 @@ function Invoke-Case([string]$activity, [object]$config, [object]$session) {
 }
 
 $adapter = Resolve-Data_AzureSql
-$null = $adapter.Construct([pscustomobject]@{ Resource='synthetic-resource'; CommandTimeoutSeconds=41 })
+$null = $adapter.Construct([pscustomobject]@{ Resource='reviewed_db'; Addresses=@('reviewed.database.windows.net'); CommandTimeoutSeconds=41 })
 $conduction = [Signal]::Start('AzureSqlBoundary.Conduction') | Select-Object -Last 1
 $item = [Signal]::Start('AzureSqlBoundary.Item') | Select-Object -Last 1
 $empty = [pscustomobject]@{ Columns=@((New-Column 'Id' 'int')); Rows=@() }
@@ -604,5 +606,98 @@ $timeoutSession = New-TestCase @($empty)
 $invalidTimeout = Invoke-Case Query ([pscustomobject]@{ CommandText='select 1'; CommandTimeoutSeconds=0 }) $timeoutSession
 Assert ($invalidTimeout.Failure() -and $timeoutSession.Command.Disposed) 'Invalid timeout was accepted or command leaked.'
 
+$adminText = 'CREATE TABLE [reviewed].[AdminProbe] ([Id] int NOT NULL)'
+$adminSession = New-TestCase $null
+$adminSession.Command.NonQueryResult = -1
+$adminSession.Command.AfterExecute = {
+    param($command)
+    (@($command.Parameters | Where-Object ParameterName -eq '@Out')[0]).Value = 17
+}
+$admin = Invoke-Case Admin ([pscustomobject]@{
+    CommandText=$adminText; CommandTimeoutSeconds=19
+    Parameters=@(@{ Name='@Out'; SqlDbType='Int'; Direction='Output' })
+}) $adminSession
+$adminResult = $admin.GetResult() | ConvertFrom-Json -Depth 100
+Assert (-not $admin.Failure() -and $adminSession.Command.CommandType -eq [System.Data.CommandType]::Text -and
+    $adminSession.Command.CommandText -ceq $adminText -and $adminSession.Command.CommandTimeout -eq 19 -and
+    $adminSession.Command.NonQueryCalls -eq 1 -and $adminSession.Command.ReaderCalls -eq 0 -and
+    $adminSession.Command.Transaction -eq $adminSession.Transaction -and $adminSession.Transaction.Committed -and
+    $adminSession.Command.Disposed -and $adminResult.Operation -eq 'Admin' -and
+    $null -eq $adminResult.RowsAffected -and $adminResult.ResultSets.Count -eq 0 -and
+    $adminResult.OutputParameters.'@Out' -eq 17) 'Admin single-batch Required execution or envelope failed.'
+
+$adminNoneSession = New-TestCase $null
+$adminNoneSession.Command.NonQueryResult = 3
+$adminNone = Invoke-Case Admin ([pscustomobject]@{ CommandText='UPDATE [reviewed].[AdminProbe] SET [Id]=1'; TransactionMode='None' }) $adminNoneSession
+$adminNoneResult = $adminNone.GetResult() | ConvertFrom-Json -Depth 100
+Assert (-not $adminNone.Failure() -and $adminNoneResult.RowsAffected -eq 3 -and
+    $null -eq $adminNoneSession.Command.Transaction -and
+    ($adminNoneSession.Events -join ',') -eq 'open,execute nonquery,command dispose,session dispose') 'Admin None executed with an adapter transaction.'
+
+foreach ($field in @('ExpectedServer','ExpectedDatabase')) {
+    $override = @{ CommandText=$adminText }
+    $override[$field] = $null
+    $beforeCount = & $module { $script:TestSessions.Count }
+    $rejected = $adapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=$override },$item)
+    Assert ($rejected.Failure() -and (& $module { $script:TestSessions.Count }) -eq $beforeCount) "Admin accepted $field target override."
+}
+foreach ($addresses in @(@('http://invalid.example'), @('one.database.windows.net','two.database.windows.net'))) {
+    $invalidAdapter = Resolve-Data_AzureSql
+    $null = $invalidAdapter.Construct(@{ Resource='reviewed_db'; Addresses=$addresses })
+    $beforeCount = & $module { $script:TestSessions.Count }
+    $rejected = $invalidAdapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=@{ CommandText=$adminText } },$item)
+    Assert ($rejected.Failure() -and (& $module { $script:TestSessions.Count }) -eq $beforeCount) 'Malformed registered SQL target reached the session factory.'
+}
+foreach ($field in @('DataSource','Database')) {
+    $mismatchSession = New-TestCase $null
+    if ($field -eq 'DataSource') { $mismatchSession.DataSource = 'different.database.windows.net' }
+    else { $mismatchSession.Database = 'different_db' }
+    $mismatch = Invoke-Case Admin ([pscustomobject]@{ CommandText=$adminText }) $mismatchSession
+    Assert ($mismatch.Failure() -and -not $mismatchSession.Command.NonQueryCalls -and
+        ($mismatchSession.Events -join ',') -eq 'open,session dispose') "Admin executed against mismatched $field."
+}
+
+# GO is submitted unchanged in one command. SQL authors must remove utility separators.
+$adminGoSession = New-TestCase $null
+$adminGoText = "SELECT 1`nGO`nSELECT 2"
+$adminGo = Invoke-Case Admin ([pscustomobject]@{ CommandText=$adminGoText }) $adminGoSession
+Assert (-not $adminGo.Failure() -and $adminGoSession.Command.CommandText -ceq $adminGoText -and
+    $adminGoSession.Command.NonQueryCalls -eq 1) 'Admin split or rewrote a caller batch.'
+
+$adminInvalidSession = New-TestCase $null
+$adminInvalid = $adapter.Invoke('FusionDatabase', 'Admin', $conduction,
+    ([pscustomobject]@{ Config=[pscustomobject]@{ CommandText='  ' } }), $item)
+Assert ($adminInvalid.Failure() -and -not $adminInvalidSession.Opened -and
+    ($adminInvalid.GetEntries() | Out-String) -notmatch 'CommandText') 'Admin accepted a blank command or exposed validation details.'
+$adminInvalidType = $adapter.Invoke('FusionDatabase', 'Admin', $conduction,
+    ([pscustomobject]@{ Config=[pscustomobject]@{ CommandText=42 } }), $item)
+Assert ($adminInvalidType.Failure()) 'Admin accepted a non-string command.'
+
+$adminFailureSession = New-TestCase $null
+$adminFailureSession.Command.ThrowOnNonQuery = $true
+$adminFailure = Invoke-Case Admin ([pscustomobject]@{ CommandText='synthetic secret SQL' }) $adminFailureSession
+Assert ($adminFailure.Failure() -and $adminFailureSession.Command.NonQueryCalls -eq 1 -and
+    $adminFailureSession.Transaction.RolledBack -and -not $adminFailure.HasResult() -and
+    ($adminFailure.GetEntries() | Out-String) -notmatch 'synthetic secret') 'Failed Admin leaked details or a Write rollback payload.'
+
+$adminCommitSession = New-TestCase $null
+$adminCommitSession.Transaction.ThrowOnCommit = $true
+$adminCommit = Invoke-Case Admin ([pscustomobject]@{ CommandText=$adminText }) $adminCommitSession
+Assert ($adminCommit.Failure() -and
+    ($adminCommit.GetEntries() | Out-String) -match 'outcome is uncertain' -and
+    ($adminCommit.GetEntries() | Out-String) -notmatch $adminText) 'Admin commit uncertainty was hidden or leaked SQL.'
+
+$adminCleanupSession = New-TestCase $null
+$adminCleanupSession.ThrowOnDispose = $true
+$adminCleanup = Invoke-Case Admin ([pscustomobject]@{ CommandText=$adminText }) $adminCleanupSession
+Assert ($adminCleanup.Failure() -and $adminCleanupSession.Transaction.Committed -and
+    ($adminCleanup.GetEntries() | Out-String) -match 'committed, but cleanup failed') 'Admin committed cleanup failure was misclassified.'
+
+$adminMalformedSession = New-TestCase $null
+& $module { Set-Item Function:script:Invoke-AzureSqlAdmin -Value { return '{"Operation":"Admin"' } }
+$adminMalformed = Invoke-Case Admin ([pscustomobject]@{ CommandText=$adminText }) $adminMalformedSession
+Assert ($adminMalformed.Failure() -and $adminMalformedSession.Transaction.RolledBack -and
+    -not $adminMalformedSession.Transaction.Committed) 'Malformed Admin JSON was committed.'
+
 Assert ((Get-Command New-AzureSqlSession -ErrorAction SilentlyContinue) -eq $null) 'Internal factory was exported.'
-Write-Output 'PASS: Write, Query, Delete paths; schema, transaction ordering, rollback, opt-out, sanitized failures, and disposal.'
+Write-Output 'PASS: Write, Query, Delete, Admin paths; schema, transaction ordering, rollback, opt-out, sanitized failures, and disposal.'

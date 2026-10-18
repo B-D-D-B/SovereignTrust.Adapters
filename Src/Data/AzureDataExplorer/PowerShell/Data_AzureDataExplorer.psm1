@@ -7,15 +7,16 @@ if (-not (Get-Module -Name $sgModuleName)) {
 
 # Load all files (functions + classes)
 . "$PSScriptRoot/Invoke-Data_AzureDataExplorer.ps1"
+. "$PSScriptRoot/Invoke-AzureDataExplorerAdmin.ps1"
 
 class Data_AzureDataExplorer {
-    [MappedDataAdapter]$MappedAdapter
+    [object]$MappedAdapter
     [Signal]$Signal
 
     Data_AzureDataExplorer() {
     }
 
-    Data_AzureDataExplorer([MappedDataAdapter]$mappedAdapter) {
+    Data_AzureDataExplorer([object]$mappedAdapter) {
         $this.MappedAdapter = $mappedAdapter
     }
 
@@ -53,18 +54,29 @@ class Data_AzureDataExplorer {
         [object]$Plan,
         [Signal]$ItemSignal
     ) {
-        $opSignal = [Signal]::Start("Queue_AzureStorageQueue.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
+        $opSignal = [Signal]::Start("Data_AzureDataExplorer.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
 
         try {
             if (-not $ConductionSignal) {
-                $opSignal.LogCritical("Null ConductionSignal passed to Queue_AzureStorageQueue.Invoke()")
+                $opSignal.LogCritical("Null ConductionSignal passed to Data_AzureDataExplorer.Invoke()")
                 return $opSignal
             }
 
             $opSignal.SetJacket($ConductionSignal)
 
             if (-not $Activity) {
-                $opSignal.LogWarning("No Activity provided to Queue_AzureStorageQueue.Invoke()")
+                $opSignal.LogCritical("No Activity provided to Data_AzureDataExplorer.Invoke()")
+                return $opSignal
+            }
+
+            if ($Activity -eq 'Admin') {
+                $adminSignal = Invoke-AzureDataExplorerAdmin -Adapter $this -Plan $Plan
+                if ($opSignal.MergeSignalAndVerifyFailure($adminSignal)) { return $opSignal }
+                if (-not $adminSignal.HasResult()) {
+                    $opSignal.LogCritical('Admin completed without a result.')
+                    return $opSignal
+                }
+                $opSignal.SetResult($adminSignal.GetResult())
                 return $opSignal
             }
 
@@ -89,8 +101,7 @@ class Data_AzureDataExplorer {
                 # ---------------------------------------------------------
 
                 "Query" {
-
-                    break
+                    return $opSignal.LogCritical('Data AzureDataExplorer Query is not implemented.')
                 }
 
                 "WriteItem" {
@@ -188,13 +199,12 @@ class Data_AzureDataExplorer {
                 }
 
                 "Delete" {
-                    break
+                    return $opSignal.LogCritical('Data AzureDataExplorer Delete is not implemented.')
                 }
 
                 default {
-                    $opSignal.LogWarning("Unsupported Activity: $Activity")
-                    $resultSignal = [Signal]::Start("StorageQueue.UnsupportedActivity", $ItemSignal) | Select-Object -Last 1
-                    break
+                    $opSignal.LogCritical("Unsupported Data AzureDataExplorer activity: $Activity")
+                    return $opSignal
                 }
             }
 

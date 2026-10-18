@@ -1,8 +1,10 @@
 using module SignalGraph
 
+param([switch]$STAdmin)
+
 $ErrorActionPreference = 'Stop'
 $foundationManifest = Join-Path $PSScriptRoot '../../../../../SovereignTrust.Foundation/Src/PowerShell/SovereignTrust.Foundation.psd1'
-$configPath = Join-Path $PSScriptRoot '../../../../../SDAFusion-Content/SDA/Config/SDAFusionApp.Json'
+$configPath = if ($STAdmin) { Join-Path $PSScriptRoot '../../../../../BDDB.Infrastructure/integration/sovereign-trust/content/test/config/STTestApp.json' } else { Join-Path $PSScriptRoot '../../../../../SDAFusion-Content/SDA/Config/SDAFusionApp.Json' }
 $moduleRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../../..')).ProviderPath
 Import-Module (Resolve-Path $foundationManifest).ProviderPath -Force
 if (Get-Module Data_AzureSql) { throw 'AzureSql must be unloaded before lazy registration.' }
@@ -10,9 +12,13 @@ if (Get-Module Data_AzureSql) { throw 'AzureSql must be unloaded before lazy reg
 function Assert([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 
 $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json -Depth 100
-$agent = @($config.Agents | Where-Object Name -eq 'sdadev01')[0]
-$sourceJacket = @($agent.Roles.SDAWorkItems.Adapters | Where-Object Name -eq 'SDAFusionDatabase')[0]
-Assert ($null -ne $sourceJacket -and $sourceJacket.Resource -ceq 'sda-fusion' -and $sourceJacket.Addresses[0] -ceq 'sda-dev.database.windows.net') 'The production configuration jacket was not selected.'
+$agent = @($config.Agents | Where-Object Name -eq ($STAdmin ? 'st-test' : 'sdadev01'))[0]
+$role = if ($STAdmin) { @($agent.Roles | Where-Object Name -eq 'STIntegrationTest')[0] } else { $agent.Roles.SDAWorkItems }
+$sourceJacket = @($role.Adapters | Where-Object Name -eq ($STAdmin ? 'AdminDatabase' : 'SDAFusionDatabase'))[0]
+$expectedServer = $STAdmin ? 'sda-st-test.database.windows.net' : 'sda-dev.database.windows.net'
+$expectedSlot = $STAdmin ? 'AdminDatabase' : 'FusionDatabase'
+$expectedActivity = $STAdmin ? 'Admin' : 'Query'
+Assert ($null -ne $sourceJacket -and $sourceJacket.Resource -ceq 'sda-fusion' -and $sourceJacket.Addresses[0] -ceq $expectedServer) 'The selected configuration jacket was not found.'
 
 $bootstrap = [Signal]::Start('AzureSqlLazy.Bootstrap') | Select-Object -Last 1
 $bootstrap.SetResult([pscustomobject]@{}) | Out-Null
@@ -35,6 +41,9 @@ $rootAdapter.Construct($rootJacket) | Out-Null
 $rootRegistration = Register-AdapterToMappedSlot -ConductorJacketSignal $conductor.Signal -Signal $runSignal -ConductionContext $conductor.Signal -Adapter $rootAdapter | Select-Object -Last 1
 Assert (-not $rootRegistration.Failure()) 'ModuleRoots bootstrap registration failed.'
 
+$global:AzureSqlLazyExpectedSlot = $expectedSlot
+$global:AzureSqlLazyExpectedActivity = $expectedActivity
+$global:AzureSqlLazyExpectedServer = $expectedServer
 $global:AzureSqlLazyHydrationCalls = 0
 $global:AzureSqlLazyFactoryCalls = 0
 $foundation = Get-Module SovereignTrust.Foundation
@@ -51,11 +60,11 @@ $foundation = Get-Module SovereignTrust.Foundation
             & (Get-Module Data_AzureSql) {
                 Set-Item Function:script:Invoke-AzureSqlExecution -Value {
                     param($Adapter, $Slot, $Activity, $Config, $Plan, $NormalizedWrite, $ConductionSignal, $ItemSignal)
-                    if ($Slot -cne 'FusionDatabase' -or $Activity -cne 'Query' -or
-                        $Adapter.Configuration.Resource -cne 'sda-fusion' -or $Adapter.Configuration.Addresses[0] -cne 'sda-dev.database.windows.net') {
+                    if ($Slot -cne $global:AzureSqlLazyExpectedSlot -or $Activity -cne $global:AzureSqlLazyExpectedActivity -or
+                        $Adapter.Configuration.Resource -cne 'sda-fusion' -or $Adapter.Configuration.Addresses[0] -cne $global:AzureSqlLazyExpectedServer) {
                         throw 'Lazy route did not preserve the hydrated adapter.'
                     }
-                    return '{"Operation":"Query","RowsAffected":null,"OutputParameters":{},"ResultSets":[]}'
+                    return ('{"Operation":"' + $global:AzureSqlLazyExpectedActivity + '","RowsAffected":null,"OutputParameters":{},"ResultSets":[]}')
                 }
             }
         }
@@ -90,7 +99,7 @@ Assert (-not (Get-Module Data_AzureSql)) 'Registration loaded AzureSql before fi
 
 $itemSignal = [Signal]::Start('AzureSqlLazy.Item') | Select-Object -Last 1
 $itemSignal.SetPointer($conductor.Signal.GetPointer()) | Out-Null
-$plan = [pscustomobject]@{ Adapter = 'Data.FusionDatabase'; Activity = 'Query'; Config = [pscustomobject]@{ CommandText = 'SELECT 1'; Parameters = @() } }
+$plan = [pscustomobject]@{ Adapter = "Data.$expectedSlot"; Activity = $expectedActivity; Config = [pscustomobject]@{ CommandText = 'SELECT 1'; Parameters = @() } }
 $result = Invoke-MappedAdapter -Adapter $plan.Adapter -Activity $plan.Activity -Signal $runSignal -Plan $plan -ItemSignal $itemSignal | Select-Object -Last 1
 Assert (-not $result.Failure()) 'The first mapped invocation failed during lazy resolution.'
 $loadedModule = & $foundation { Get-Module Data_AzureSql }
@@ -99,6 +108,6 @@ Assert ($global:AzureSqlLazyHydrationCalls -eq 1) 'Hydration did not run exactly
 Assert ($global:AzureSqlLazyFactoryCalls -eq 1) 'Production resolution did not invoke Resolve-Data_AzureSql exactly once.'
 $resolved = $registration.GetResult()
 Assert ($resolved.State -eq 'Resolved' -and $resolved.Instance.GetType().Name -ceq 'Data_AzureSql') 'The lazy registration did not construct Data_AzureSql.'
-Assert ($resolved.Instance.Configuration.Resource -ceq 'sda-fusion' -and $resolved.Instance.Configuration.Addresses[0] -ceq 'sda-dev.database.windows.net' -and
+Assert ($resolved.Instance.Configuration.Resource -ceq 'sda-fusion' -and $resolved.Instance.Configuration.Addresses[0] -ceq $expectedServer -and
     $resolved.Instance.Configuration.HydrationMarker -ceq 'synthetic-lazy-handoff') 'Construct did not receive the hydrated jacket.'
 Write-Output 'PASS: initially unloaded, production lazy registration, packaged module import, hydration, Construct, and mapped route.'

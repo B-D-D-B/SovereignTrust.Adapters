@@ -1,7 +1,11 @@
 function Invoke-AzureStorageAccount_ReadObject {
     param (
+        [Parameter(Mandatory)][Signal]$ConductionSignal,
         [Signal]$Signal,
+        [Parameter(Mandatory)][Signal]$ItemSignal,
+        [Parameter(Mandatory)][object]$Plan,
         [Parameter(Mandatory)][string]$VirtualPath,
+        [Parameter(Mandatory)][object]$Resource,
         [Parameter()][string]$PathSuffix,
         [string]$SignalLevel = "Critical",
         [Parameter()][object]$Addresses
@@ -9,10 +13,20 @@ function Invoke-AzureStorageAccount_ReadObject {
 
     $opSignal = [Signal]::Start(
         "Invoke-AzureStorageAccount_ReadObject:$VirtualPath",
-        $Signal
+        $ItemSignal
     ) | Select-Object -Last 1
 
     try {
+        $targetPathProvided = $null -ne $Plan.Config -and $null -ne $Plan.Config.PSObject.Properties['TargetPath']
+        if ($targetPathProvided) {
+            $targetPath = [string]$Plan.Config.TargetPath
+            if ([string]::IsNullOrWhiteSpace($targetPath) -or -not [System.IO.Path]::IsPathFullyQualified($targetPath) -or $targetPath -match '^[^:]+::') {
+                return $opSignal.LogCritical('Config.TargetPath must be a nonempty absolute filesystem path.')
+            }
+            if ([bool]$Plan.Config.ReturnHttpStatus) {
+                return $opSignal.LogCritical('Config.TargetPath cannot be combined with ReturnHttpStatus.')
+            }
+        }
         # ░▒▓█ NORMALIZE FILE EXTENSION █▓▒░
         if (
             $PathSuffix -and
@@ -39,7 +53,7 @@ function Invoke-AzureStorageAccount_ReadObject {
             }
 
             $hostAddress = ([string]$address).TrimEnd('/')
-            $blobUri = "$hostAddress/$blobPath"
+            $blobUri = "$hostAddress/$resource/$blobPath"
 
             $restPlan = [pscustomobject]@{
                 Config = [pscustomobject]@{
@@ -50,15 +64,19 @@ function Invoke-AzureStorageAccount_ReadObject {
                         "x-ms-version" = "2023-11-03"
                     }
                     CacheAccessToken = $true
+                    TargetPath       = if ($targetPathProvided) { $targetPath } else { $null }
                 }
+            }
+            if (-not $targetPathProvided) {
+                $restPlan.Config.PSObject.Properties.Remove('TargetPath')
             }
 
             $responseSignal = Invoke-MappedAdapter `
                 -Adapter "Condenser.Rest" `
                 -Activity "Get" `
-                -Signal $Signal `
+                -Signal $ConductionSignal `
                 -Plan $restPlan `
-                -ItemSignal $Signal |
+                -ItemSignal $ItemSignal |
             Select-Object -Last 1
 
             if ($responseSignal.Success()) {
@@ -66,6 +84,9 @@ function Invoke-AzureStorageAccount_ReadObject {
 
                 if ($responseSignal.HasResult()) {
                     $content = $responseSignal.GetResult($true)
+                    if ($content -is [pscustomobject]) {
+                        $content = $content | ConvertTo-Json -Depth 100
+                    }
 
                     $opSignal.SetResult($content)
                     $opSignal.LogInformation(
@@ -78,9 +99,14 @@ function Invoke-AzureStorageAccount_ReadObject {
 
             # A failed request may simply mean that this address does
             # not contain the requested blob. Check the next address.
-            $opSignal.MergeSignal($responseSignal)
+            if (-not $targetPathProvided) {
+                $opSignal.MergeSignal($responseSignal)
+            }
         }
 
+        if ($targetPathProvided) {
+            return $opSignal.LogCritical("Blob '$blobPath' could not be downloaded to Config.TargetPath from any Azure Storage address.")
+        }
         $opSignal.LogMessage(
             $SignalLevel,
             "Blob '$blobPath' not found in any Azure Storage address."

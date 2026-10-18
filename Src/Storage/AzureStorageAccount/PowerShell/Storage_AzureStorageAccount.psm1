@@ -9,17 +9,19 @@ if (-not (Get-Module -Name $sgModuleName)) {
 
 . "$PSScriptRoot/Invoke-AzureStorageAccount_ReadObject.ps1"
 . "$PSScriptRoot/Invoke-AzureStorageAccount_WriteObject.ps1"
+. "$PSScriptRoot/Invoke-AzureStorageAccount_ExistsObject.ps1"
+. "$PSScriptRoot/Invoke-AzureStorageAccount_DeleteObject.ps1"
 
 
 class Storage_AzureStorageAccount {
-    [MappedStorageAdapter]$MappedAdapter
+    [object]$MappedAdapter
     [Signal]$Signal
 
     Storage_AzureStorageAccount() {
     }
 
     Storage_AzureStorageAccount(
-        [MappedStorageAdapter]$mappedAdapter
+        [object]$mappedAdapter
     ) {
         $this.MappedAdapter = $mappedAdapter
     }
@@ -101,20 +103,20 @@ class Storage_AzureStorageAccount {
 
             $virtualPathSignal = Resolve-PathFromDictionary `
                 -Dictionary $Plan `
-                -Path "Config.VirtualPath" |
+                -Path "Config.VirtualPath" `
+                -Default $null `
+                -SignalLevel "Information" |
             Select-Object -Last 1
-
-            if (
-                $opSignal.MergeSignalAndVerifyFailure(
-                    $virtualPathSignal
-                )
-            ) {
-                return $opSignal.LogCritical(
-                    "Could not resolve the storage virtual path."
-                )
-            }
-
             $virtualPath = $virtualPathSignal.GetResult()
+            if ([string]::IsNullOrWhiteSpace([string]$virtualPath)) {
+                $virtualPathSignal = Resolve-PathFromDictionary `
+                    -Dictionary $Plan `
+                    -Path "VirtualPath" `
+                    -Default $null `
+                    -SignalLevel "Information" |
+                Select-Object -Last 1
+                $virtualPath = $virtualPathSignal.GetResult()
+            }
 
             if ([string]::IsNullOrWhiteSpace([string]$virtualPath)) {
                 return $opSignal.LogCritical(
@@ -178,6 +180,7 @@ class Storage_AzureStorageAccount {
                         -ItemSignal $ItemSignal `
                         -Plan $Plan `
                         -VirtualPath $virtualPath `
+                        -Resource $resource `
                         -SignalLevel $signalLevel `
                         -Addresses $addresses |
                     Select-Object -Last 1
@@ -193,7 +196,8 @@ class Storage_AzureStorageAccount {
                     # the common Storage Adapter layer so that all
                     # storage implementations share this behavior.
 
-                    if ($callSignal.Failure()) {
+                    $targetPathProvided = $null -ne $Plan.Config -and $null -ne $Plan.Config.PSObject.Properties['TargetPath']
+                    if ($callSignal.Failure() -and -not $targetPathProvided) {
                         $contentSignal = Resolve-PathFromDictionary `
                             -Dictionary $Plan `
                             -Path "Config.Content" `
@@ -323,6 +327,32 @@ class Storage_AzureStorageAccount {
                         )
                     }
 
+                    break
+                }
+
+                "Exists" {
+                    $callSignal = Invoke-AzureStorageAccount_ExistsObject `
+                        -ConductionSignal $ConductionSignal `
+                        -Signal $this.Signal `
+                        -ItemSignal $ItemSignal `
+                        -Plan $Plan `
+                        -VirtualPath $virtualPath `
+                        -Resource $resource `
+                        -Addresses $addresses |
+                    Select-Object -Last 1
+                    break
+                }
+
+                "Delete" {
+                    $callSignal = Invoke-AzureStorageAccount_DeleteObject `
+                        -ConductionSignal $ConductionSignal `
+                        -Signal $this.Signal `
+                        -ItemSignal $ItemSignal `
+                        -Plan $Plan `
+                        -VirtualPath $virtualPath `
+                        -Resource $resource `
+                        -Addresses $addresses |
+                    Select-Object -Last 1
                     break
                 }
 

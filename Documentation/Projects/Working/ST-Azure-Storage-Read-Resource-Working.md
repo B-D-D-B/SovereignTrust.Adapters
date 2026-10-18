@@ -1,0 +1,12 @@
+# ST Azure Storage Read Resource — Working
+
+## ST-AZ-READ-RESOURCE
+
+- Objective: pass the adapter jacket's `Resource` through Azure Storage `Read` and include it in the blob URI, as `Write` does. Scope: the Azure Storage adapter call, Read helper, and focused mocked storage check. Normal track; no live provider operation.
+- Authority: project task instructions and shared SP-01/SP-02, worker/reviewer cycle, D1–D8 and R1–R8. Worker requested Sol 6 medium; independent reviewer requested Astra 6 medium. Host-observed model/effort telemetry was unavailable; the explicit dispatch configuration is the available guarantee.
+- The function was planned and independently marked **READY** under D1–D8 before execution. Registration in this record is retrospective; no earlier project Working record existed.
+- Approved preimage SHA-256: `Storage_AzureStorageAccount.psm1` `CA3FBDE92FE1312CEA3579109C4F943133BA701E47BA83099AE75A57011B0E68`; `Invoke-AzureStorageAccount_ReadObject.ps1` `B8F01FBDC400CD083F10201E8595C847787D794AADA15D09808F8B5C4CF81B35`; `Tests/StorageOperations.Tests.ps1` `05AC469F6E418DED9626FC6B689383FB3C8E4D51E3F258243C39BB3BE8449F9E`. These files were already dirty or untracked. The worker verified the hashes before editing, but exact preimage bytes were not retained as separate files; attribution relies on guarded-edit and transcript evidence.
+- Change: the adapter's Read branch passes `-Resource $resource`; the Read helper requires `Resource` and builds `$hostAddress/$resource/$blobPath`. The mocked Read check verifies a single Get, the exact container-qualified URI, and returned content. Existing Exists/Delete checks remain.
+- Frozen result SHA-256: `Storage_AzureStorageAccount.psm1` `21CB819FCCE2F8E1C619EC8E6D3E603D395C898475818C0A52760A9BE4BB4CBD`; `Invoke-AzureStorageAccount_ReadObject.ps1` `90B7DAB0591776ECDEE4CB15C5035A0E03917A3629E0F110251F78CE4DDE61B7`; `Tests/StorageOperations.Tests.ps1` `12D29FD808D802AA8BFBAEA97119A0EE098B8347593EC001A57DD77B159B99FA`.
+- Checks: `pwsh -NoProfile -File Tests/StorageOperations.Tests.ps1` exited 0 with `Storage Read, Exists and Delete adapter checks passed.` `git diff --check` on the two tracked targets exited 0. The independent reviewer repeated the PowerShell check, verified frozen hashes, assessed R1–R8 as pass, and returned **PASS** with no findings.
+- Acceptance limit: mocked adapter behavior and this documentation record; no live Azure read, deployment, or Git publication is claimed. Unrelated dirty work remains outside this function.

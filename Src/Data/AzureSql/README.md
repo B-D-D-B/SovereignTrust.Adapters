@@ -88,9 +88,9 @@ Successful calls return JSON text through `Signal.SetResult()`. This envelope il
 }
 ```
 
-Write and Delete use adapter-managed transactions by default. Only a reviewed Write stored procedure that cannot participate in one may set `"TransactionMode": "None"` in `Config`; it then owns its atomicity and failure recovery. Query and Delete do not accept that override.
+Write, Delete, and Admin use adapter-managed transactions by default. A reviewed Write stored procedure or Admin statement that cannot participate in one may set `"TransactionMode": "None"` in `Config`; the caller then owns atomicity and recovery. Query and Delete do not accept that override.
 
-The provisional in-memory implementation and `Condenser.Data` route have been removed. The adapter retains its constructed jacket. Secure connection construction, typed SQL parameter creation, and Write, Query, and Delete command execution are implemented.
+The provisional in-memory implementation and `Condenser.Data` route have been removed. The adapter retains its constructed jacket. Secure connection construction, typed SQL parameter creation, and Write, Query, Delete, and Admin command execution are implemented.
 
 ## Gated live integration suite
 
@@ -127,9 +127,9 @@ From the repository root, run `pwsh -NoProfile -File Src/Data/AzureSql/Package-A
 
 ## Internal execution boundary
 
-`Data_AzureSql.Invoke` performs activity and `Plan.Config` validation and Write normalization, then calls the private `Invoke-AzureSqlExecution` orchestrator. That function creates one session via private `New-AzureSqlSession`, dispatches to `Invoke-AzureSqlWrite`, `Invoke-AzureSqlQuery`, or `Invoke-AzureSqlDelete`, and disposes the session in `finally`. The production factory parses the hydrated jacket `Resource` with `SqlConnectionStringBuilder`, opens a new `SqlConnection`, and disposes it on open failure. Each operation disposes its command. Reader operations traverse and dispose the reader before reading output parameters.
+`Data_AzureSql.Invoke` performs activity and `Plan.Config` validation and Write normalization, then calls the private `Invoke-AzureSqlExecution` orchestrator. That function creates one session via private `New-AzureSqlSession`, dispatches to `Invoke-AzureSqlWrite`, `Invoke-AzureSqlQuery`, `Invoke-AzureSqlDelete`, or `Invoke-AzureSqlAdmin`, and disposes the session in `finally`. The production factory parses the hydrated jacket `Resource` with `SqlConnectionStringBuilder`, opens a new `SqlConnection`, and disposes it on open failure. Each operation disposes its command. Reader operations traverse and dispose the reader before reading output parameters.
 
-Tests replace `New-AzureSqlSession` **inside module scope** with a connection double. The connection double provides `CreateCommand` and `Dispose`; its command double provides a parameter collection, `ExecuteReader`, `ExecuteNonQuery`, and `Dispose`; reader doubles provide `Read`, `NextResult`, schema/column/value access, and `Dispose`. `Data_AzureSql.ExecutionBoundary.Tests.ps1` exercises the real Write, Query, and Delete helpers through this factory. No factory or double is exported or accepted through adapter configuration.
+Tests replace `New-AzureSqlSession` **inside module scope** with a connection double. The connection double provides `CreateCommand` and `Dispose`; its command double provides a parameter collection, `ExecuteReader`, `ExecuteNonQuery`, and `Dispose`; reader doubles provide `Read`, `NextResult`, schema/column/value access, and `Dispose`. `Data_AzureSql.ExecutionBoundary.Tests.ps1` exercises the real Write, Query, Delete, and Admin helpers through this factory. No factory or double is exported or accepted through adapter configuration.
 
 ## Write input contract
 
@@ -151,7 +151,22 @@ Reader results assign one JSON key to each column by ordinal, even when SQL retu
 
 Write and Delete open one connection and enlist their command in an explicit transaction by default. The adapter closes readers, captures output and return parameters, serializes and validates the complete JSON envelope, and only then commits. Execution, conversion, serialization, and precommit cleanup failures attempt rollback. A failed commit has an uncertain outcome; its failed signal says so, even if rollback also fails. A cleanup failure after a successful commit produces a failed signal that explicitly says the operation committed. Provider exception details and parameter values are never copied into those signals. Query opens a connection without an explicit transaction.
 
-Only a Write stored procedure that cannot participate in an adapter-managed transaction may set `Config.TransactionMode` to `None`. This is an explicit opt-out of rollback guarantees; the procedure owns its own atomicity and failure recovery. Omit the property for the transactional default. `None` is rejected for Delete and any `TransactionMode` setting is rejected for Query. Use this exception only for a procedure whose transaction behavior has been reviewed; it does not change retries or parameter handling.
+Only a reviewed Write stored procedure or Admin statement that cannot participate in an adapter-managed transaction may set `Config.TransactionMode` to `None`. This is an explicit opt-out of rollback guarantees; the caller owns atomicity and reconciliation of uncertain or autocommit outcomes. Omit the property for the transactional default. `None` is rejected for Delete and any `TransactionMode` setting is rejected for Query. Transaction support is statement-specific; Admin does not claim that all DDL is transactional. Admin is never retried automatically.
+
+### Admin activity
+
+Admin accepts a reviewed, nonblank `Config.CommandText` as one T-SQL batch on a mapped `Data.<slot>` jacket. It submits the text once through `ExecuteNonQuery`, with the existing typed parameters and timeout. The registered jacket supplies the target; the executing session must match its server and database. Step-level target fields are rejected. The caller must select a bounded target and hold the needed permissions under the existing identity. The mapped Admin slot routes intent; it is not a separate login or privilege boundary. This inert example names placeholders and is not a deployment script:
+
+```json
+{
+  "Adapter": "Data.AdminDatabase", "Activity": "Admin",
+  "Config": {
+    "TransactionMode": "Required", "CommandText": "CREATE TABLE [reviewed_schema].[reviewed_object] ([Id] int NOT NULL)"
+  }
+}
+```
+
+Admin returns the common JSON Signal envelope with `Operation: "Admin"`, `ResultSets: []`, captured `OutputParameters`, and the provider's `RowsAffected` count (`-1` becomes JSON `null`). Null affected count proves no catalog state. Query the catalog separately before and after DDL. SQL authors must remove client utility separators such as `GO`; the provider neither splits nor interprets them. Some definitions must be the first statement in a batch, so multi-batch work needs separate reviewed calls and has no cross-call atomicity promise. A failed Admin Signal omits a Write payload digest. Committed cleanup failure and uncertain commit remain distinct sanitized failures; SQL text, parameter values, connection resources, and exception contents are not published. An interrupted or uncertain DDL operation requires catalog reconciliation before retry or cleanup.
 
 The shared result converter retains column metadata for empty result sets and converts row values, output parameters, and return values to JSON-safe types. Nulls remain null, bytes become base64, GUIDs use lowercase canonical form, dates and times use invariant ISO-8601, decimals preserve their SQL or .NET precision and scale as strings, and integers beyond the JavaScript safe range become strings. Safe integers and floating-point values remain JSON numbers. Unsupported provider objects fail conversion before commit.
 

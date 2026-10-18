@@ -25,7 +25,7 @@ Assert ($jacket.Addresses.Count -eq 1 -and $jacket.Addresses[0] -ceq 'sda-dev.da
 $readmePath = Join-Path $PSScriptRoot '../README.md'
 $readme = Get-Content -LiteralPath $readmePath -Raw
 $blocks = [regex]::Matches($readme, '(?ms)^```json\s*\r?\n(.*?)^```')
-Assert ($blocks.Count -eq 6) 'Expected six active JSON plan/result examples.'
+Assert ($blocks.Count -eq 7) 'Expected six existing and one Admin JSON plan/result examples.'
 $examples = @($blocks | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json -AsHashtable -Depth 100 })
 for ($index = 0; $index -lt 5; $index++) {
     Assert ($examples[$index].Adapter -ceq 'Data.FusionDatabase') "Example $index does not use the direct mapped route."
@@ -35,6 +35,11 @@ Assert ($examples[1].Config.InputFormat -ceq 'Csv' -and $examples[1].Config.Payl
 Assert ($examples[2].Config.InputFormat -ceq 'Object' -and $examples[2].Config.PayloadMode -ceq 'Document' -and $examples[2].Config.Content.Metadata.Name -ceq 'Example' -and $examples[2].Config.Content.Items.Count -eq 1) 'Nested document example is inconsistent.'
 Assert ($examples[3].Activity -ceq 'Query' -and $examples[4].Activity -ceq 'Delete') 'Query/Delete examples are missing.'
 Assert ($examples[5].Operation -ceq 'Query' -and $examples[5].ResultSets[0].Columns.Count -eq 1) 'Result envelope example is inconsistent.'
+Assert ($examples[6].Adapter -ceq 'Data.AdminDatabase' -and $examples[6].Activity -ceq 'Admin' -and
+    $examples[6].Config.TransactionMode -ceq 'Required' -and
+    -not $examples[6].Config.Contains('ExpectedServer') -and
+    -not $examples[6].Config.Contains('ExpectedDatabase') -and
+    $examples[6].Config.CommandText -ceq 'CREATE TABLE [reviewed_schema].[reviewed_object] ([Id] int NOT NULL)') 'Admin documentation example is inconsistent.'
 $records = $examples[0].Config.Content | ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100
 Assert ($records.Count -eq 1 -and $records[0].Id -eq 1) 'JSON record Content does not parse as a record array.'
 $csv = @($examples[1].Config.Content | ConvertFrom-Csv)

@@ -125,11 +125,20 @@ function Invoke-AzureStorageAccount_WriteObject {
             elseif (
                 $Content -is [pscustomobject] -or
                 $Content -is [hashtable] -or
+                $Content -is [ordered] -or
+                $Content -is [System.Collections.IDictionary] -or
                 $Content -is [object[]]
             ) {
                 $requestBody = ConvertTo-Json `
                     -InputObject $Content `
                     -Depth 100
+
+                if ($Content -is [object[]])
+                {
+                    if ($Content.Count -eq 1) {
+                        $Content = , $Content | ConvertTo-Json -Depth 100
+                    }
+                }
 
                 if (
                     [string]::IsNullOrWhiteSpace(
@@ -242,7 +251,7 @@ function Invoke-AzureStorageAccount_WriteObject {
             ) {
                 $null = Add-PathToDictionary `
                     -Dictionary $restPlan `
-                    -Path "Config.InFile" `
+                    -Path "Config.SourcePath" `
                     -Value $uploadSource
             }
 
@@ -264,7 +273,7 @@ function Invoke-AzureStorageAccount_WriteObject {
             if (-not [string]::IsNullOrWhiteSpace($requestBody)) {
                 $null = Add-PathToDictionary `
                     -Dictionary $restPlan `
-                    -Path "Config.Content" `
+                    -Path "Config.Body" `
                     -Value $requestBody
             }
 

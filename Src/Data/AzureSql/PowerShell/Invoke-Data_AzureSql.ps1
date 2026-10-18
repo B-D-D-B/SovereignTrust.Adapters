@@ -8,10 +8,15 @@ function Invoke-AzureSqlExecution {
     )
     $transactionMode = Get-AzureSqlObjectValue $Config 'TransactionMode' 'Required'
     if ($transactionMode -notin @('Required', 'None') -or
-        ($transactionMode -eq 'None' -and $Activity -ne 'Write') -or
+        ($transactionMode -eq 'None' -and $Activity -notin @('Write', 'Admin')) -or
         ($Activity -eq 'Query' -and (Test-AzureSqlObjectMember $Config 'TransactionMode'))) {
         throw 'TransactionMode is invalid for this Azure SQL operation.'
     }
+    if ((Test-AzureSqlObjectMember $Config 'ExpectedServer') -or
+        (Test-AzureSqlObjectMember $Config 'ExpectedDatabase')) {
+        throw 'Azure SQL target overrides are not supported.'
+    }
+    $target = New-AzureSqlConnectionBuilder -Adapter $Adapter
     $session = $null
     $transaction = $null
     $failure = $null
@@ -23,12 +28,10 @@ function Invoke-AzureSqlExecution {
         $session = New-AzureSqlSession -Adapter $Adapter
         if ($null -eq $session) { throw 'Azure SQL session factory returned no connection.' }
         $session.Open()
-        # Optional trusted destination binding is checked on the very session that will execute.
-        $expectedServer = Get-AzureSqlObjectValue $Config 'ExpectedServer'
-        $expectedDatabase = Get-AzureSqlObjectValue $Config 'ExpectedDatabase'
-        if ($expectedServer -and $session.DataSource -ine $expectedServer) { throw 'Azure SQL destination identity mismatch.' }
-        if ($expectedDatabase -and $session.Database -cne $expectedDatabase) { throw 'Azure SQL destination identity mismatch.' }
-        if ($Activity -in @('Write', 'Delete') -and $transactionMode -eq 'Required') {
+        # The registered adapter target is checked on the executing session.
+        if ($session.DataSource -ine $target.DataSource -or
+            $session.Database -cne $target.InitialCatalog) { throw 'Azure SQL destination identity mismatch.' }
+        if ($Activity -in @('Write', 'Delete', 'Admin') -and $transactionMode -eq 'Required') {
             $transaction = $session.BeginTransaction()
             if ($null -eq $transaction) { throw 'Azure SQL session returned no transaction.' }
         }
@@ -36,10 +39,19 @@ function Invoke-AzureSqlExecution {
             'Write' { $result = Invoke-AzureSqlWrite -Session $session -Adapter $Adapter -Config $Config -NormalizedWrite $NormalizedWrite -Transaction $transaction }
             'Query' { $result = Invoke-AzureSqlQuery -Session $session -Adapter $Adapter -Config $Config }
             'Delete' { $result = Invoke-AzureSqlDelete -Session $session -Adapter $Adapter -Config $Config -Transaction $transaction }
+            'Admin' { $result = Invoke-AzureSqlAdmin -Session $session -Adapter $Adapter -Config $Config -Transaction $transaction }
             default { throw "Unsupported AzureSql activity '$Activity'." }
         }
         if ($result -isnot [string]) { throw 'Azure SQL execution must return JSON text.' }
-        $null = ConvertFrom-Json -InputObject $result -Depth 100 -ErrorAction Stop
+        $parsedResult = ConvertFrom-Json -InputObject $result -Depth 100 -ErrorAction Stop
+        if ($Activity -eq 'Admin' -and
+            ($null -eq $parsedResult -or $parsedResult.Operation -cne 'Admin' -or
+             -not (Test-AzureSqlObjectMember $parsedResult 'RowsAffected') -or
+             -not (Test-AzureSqlObjectMember $parsedResult 'OutputParameters') -or
+             -not (Test-AzureSqlObjectMember $parsedResult 'ResultSets') -or
+             $parsedResult.ResultSets -isnot [array] -or $parsedResult.ResultSets.Count -ne 0)) {
+            throw 'Azure SQL Admin returned an invalid result envelope.'
+        }
         if ($null -ne $transaction) { $commitAttempted = $true; $transaction.Commit(); $committed = $true }
     }
     catch {
@@ -78,7 +90,7 @@ function Invoke-Data_AzureSql {
 
     $opSignal = [Signal]::Start("Data_AzureSql.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
     try {
-        if ($Activity -notin @('Write', 'Query', 'Delete')) {
+        if ($Activity -notin @('Write', 'Query', 'Delete', 'Admin')) {
             throw "Unsupported AzureSql activity '$Activity'."
         }
         $config = Get-AzureSqlObjectValue $Plan 'Config'
@@ -88,7 +100,8 @@ function Invoke-Data_AzureSql {
                 throw 'Write requires Config.Procedure.'
             }
         }
-        elseif ([string]::IsNullOrWhiteSpace([string](Get-AzureSqlObjectValue $config 'CommandText'))) {
+        elseif (($Activity -eq 'Admin' -and (Get-AzureSqlObjectValue $config 'CommandText') -isnot [string]) -or
+            [string]::IsNullOrWhiteSpace([string](Get-AzureSqlObjectValue $config 'CommandText'))) {
             throw "$Activity requires Config.CommandText."
         }
 

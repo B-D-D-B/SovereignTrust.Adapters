@@ -213,7 +213,7 @@ function ConvertTo-AzureSqlResultSet {
 function ConvertTo-AzureSqlJsonResult {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory)][ValidateSet('Write', 'Query', 'Delete')][string]$Operation,
+        [Parameter(Mandatory)][ValidateSet('Write', 'Query', 'Delete', 'Admin')][string]$Operation,
         [object]$Value,
         [AllowNull()][Nullable[int]]$DefaultRowsAffected = $null,
         [object]$OutputParameters = $null
