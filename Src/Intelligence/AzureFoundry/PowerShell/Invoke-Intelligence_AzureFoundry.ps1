@@ -1,4 +1,4 @@
-function Invoke-Queue_AzureStorageQueue()
+function Invoke-Intelligence_AzureFoundry()
 {
 
     param (

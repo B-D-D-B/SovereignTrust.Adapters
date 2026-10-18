@@ -2,7 +2,7 @@ using module SignalGraph
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$manifest = Join-Path $root 'PowerShell/Network_CodexCLI.psd1'
+$manifest = Join-Path $root 'PowerShell/Intelligence_CodexCLI.psd1'
 $foundationManifest = Join-Path $PSScriptRoot '../../../../../SovereignTrust.Foundation/Src/PowerShell/SovereignTrust.Foundation.psd1'
 $project = Join-Path $PSScriptRoot 'FixtureCli/FixtureCli.csproj'
 $output = Join-Path $PSScriptRoot 'FixtureCli/out'
@@ -15,8 +15,8 @@ Import-Module $manifest -Force
 Add-Type -Path (Join-Path $PSScriptRoot 'FixtureHttps.cs') -ErrorAction Stop
 function Assert([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 $jacket = [pscustomobject]@{
-    Name = 'CodexCLIFixture'; VirtualPath = 'SovereignTrust.Adapters.Network.CodexCLI.AI.Persistent.Run'; IsMapped = $true
-    Kind = 'Network'; Slot = 'AI'
+    Name = 'CodexCLIFixture'; VirtualPath = 'SovereignTrust.Adapters.Intelligence.CodexCLI.AI.Persistent.Run'; IsMapped = $true
+    Kind = 'Intelligence'; Slot = 'AI'
     DefaultModelKey = 'fixture'
     Profiles = @(@('fixture','fixture-output-first','fixture-never-read','fixture-descendant','fixture-stdout-flood','fixture-stderr-flood') | ForEach-Object { [pscustomobject]@{ ModelKey = $_; Model = $_; ReasoningEffort = 'medium' } })
     CodexCLI = [pscustomobject]@{
@@ -24,17 +24,17 @@ $jacket = [pscustomobject]@{
         AuthenticationMode = 'ApiKey'; ApiKey = 'fixture-key'; TimeoutSeconds = 3
     }
 }
-$adapter = Resolve-Network_CodexCLI
+$adapter = Resolve-Intelligence_CodexCLI
 $construction = $adapter.Construct($jacket)
 Assert (-not $construction.Failure() -and $construction.GetResult() -eq $adapter) 'Construct failed or did not return adapter.'
 Assert ($adapter.Configuration -eq $jacket -and $adapter.Signal.GetJacket().GetResult() -eq $jacket) 'Construct lost jacket.'
 $duplicateJacket = $jacket | ConvertTo-Json -Depth 20 | ConvertFrom-Json -Depth 20
 $duplicateJacket.Profiles += [pscustomobject]@{ ModelKey='fixture'; Model='other'; ReasoningEffort='medium' }
-$duplicateResult = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $duplicateJacket
+$duplicateResult = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $duplicateJacket
 Assert ($duplicateResult.Failure()) 'Duplicate profile key was accepted.'
 $legacyJacket = $jacket | ConvertTo-Json -Depth 20 | ConvertFrom-Json -Depth 20
 $legacyJacket.CodexCLI | Add-Member -NotePropertyName Model -NotePropertyValue 'fixture'
-$legacyResult = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $legacyJacket
+$legacyResult = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $legacyJacket
 Assert ($legacyResult.Failure()) 'Legacy jacket model was accepted.'
 $signal = [Signal]::Start('CodexCLI.Test') | Select-Object -Last 1
 function Send([object]$Config) {
@@ -50,24 +50,24 @@ $hooksFile = Join-Path $savedHome 'hooks.json'
 $jacket.CodexCLI.AuthenticationMode = 'Saved'
 $jacket.CodexCLI | Add-Member -NotePropertyName CodexHome -NotePropertyValue $savedHome
 try {
-    $emptyHome = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
+    $emptyHome = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
     Assert (-not $emptyHome.Failure() -and $emptyHome.HasResult()) 'Empty plugins directories blocked Saved mode.'
     [IO.File]::WriteAllText($pluginFile,'fixture plugin')
-    $populatedHome = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
+    $populatedHome = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
     Assert ($populatedHome.Failure() -and ((@($populatedHome.GetEntries() | ForEach-Object Message) -join ' | ') -match 'disallowed hooks or plugins')) 'Populated plugins directory was accepted.'
     $jacket.CodexCLI | Add-Member -NotePropertyName AllowSavedHomeExtensions -NotePropertyValue $true
-    $allowedPlugins = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
+    $allowedPlugins = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
     Assert (-not $allowedPlugins.Failure() -and $allowedPlugins.HasResult()) 'Jacket opt-in did not allow plugin content.'
     $jacket.CodexCLI.AllowSavedHomeExtensions = 'true'
-    $invalidOptIn = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
+    $invalidOptIn = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
     Assert ($invalidOptIn.Failure() -and ((@($invalidOptIn.GetEntries() | ForEach-Object Message) -join ' | ') -match 'must be a Boolean')) 'Non-Boolean saved-home opt-in was accepted.'
     $jacket.CodexCLI.AllowSavedHomeExtensions = $false
     [IO.File]::Delete($pluginFile)
     [IO.File]::WriteAllText($hooksFile,'{}')
-    $hookHome = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
+    $hookHome = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
     Assert ($hookHome.Failure()) 'Saved home hooks.json was accepted.'
     $jacket.CodexCLI.AllowSavedHomeExtensions = $true
-    $allowedHooks = & (Get-Module Network_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
+    $allowedHooks = & (Get-Module Intelligence_CodexCLI) { param($j) Resolve-CodexCLIRuntime $j | Select-Object -Last 1 } $jacket
     Assert (-not $allowedHooks.Failure() -and $allowedHooks.HasResult()) 'Jacket opt-in did not allow hooks.json.'
 }
 finally {
@@ -80,7 +80,7 @@ finally {
     if ([IO.Directory]::Exists($plugins)) { [IO.Directory]::Delete($plugins) }
     if ([IO.Directory]::Exists($savedHome)) { [IO.Directory]::Delete($savedHome) }
 }
-$exitFailure = & (Get-Module Network_CodexCLI) {
+$exitFailure = & (Get-Module Intelligence_CodexCLI) {
     param($a)
     Invoke-CodexCLIExecution $a ([pscustomobject]@{ Prompt='[fixture:exit-fail]' })
 } $adapter
@@ -89,10 +89,10 @@ $exitEntries = @($exitFailure.GetEntries())
 Assert (@($exitEntries | Where-Object { $_.Level -eq 'Critical' -and $_.Message -match 'exit code 23' }).Count -gt 0) 'Nonzero child exit code was lost.'
 Assert (@($exitEntries | Where-Object { $_.Level -eq 'Critical' -and $_.Message -match 'fixture child failure detail' }).Count -gt 0) 'Stderr was not logged as critical.'
 Assert (@($exitEntries | Where-Object { $_.Level -eq 'Information' -and $_.Message -match 'thread.started' }).Count -gt 0) 'Normal JSONL event was not logged as information.'
-$eventFailure = & (Get-Module Network_CodexCLI) { param($a) Invoke-CodexCLIExecution $a ([pscustomobject]@{ Prompt='[fixture:fail]' }) } $adapter
+$eventFailure = & (Get-Module Intelligence_CodexCLI) { param($a) Invoke-CodexCLIExecution $a ([pscustomobject]@{ Prompt='[fixture:fail]' }) } $adapter
 Assert (@($eventFailure.GetEntries() | Where-Object { $_.Level -eq 'Critical' -and $_.Message -match 'turn.failed' }).Count -gt 0) 'Terminal JSONL event was not logged as critical.'
 
-& (Get-Module Network_CodexCLI) {
+& (Get-Module Intelligence_CodexCLI) {
     param($fixtureExecutable,$fixtureWorkspace)
     $fields = [pscustomobject]@{ Null=$null; False=$false; Empty=@(); One=@('one'); Many=@('one','two') }
     $missingMember = Test-CodexCLIMember $fields 'Missing' | Select-Object -Last 1
@@ -152,15 +152,15 @@ Assert ($null -eq (Get-Process -Id $descendantId -ErrorAction SilentlyContinue))
 [IO.File]::Delete($descendantMarker)
 $jacket.CodexCLI | Add-Member -NotePropertyName MaxEventBytes -NotePropertyValue 4096
 Assert (Send ([pscustomobject]@{ Prompt='x'; ModelKey='fixture-stdout-flood' })).Failure() 'Stdout capture limit was not enforced.'
-$stdoutReason = & (Get-Module Network_CodexCLI) { param($a) $s = Invoke-CodexCLIExecution $a ([pscustomobject]@{Prompt='x';ModelKey='fixture-stdout-flood'}); @($s.GetEntries() | ForEach-Object Message) -join ' | ' } $adapter
+$stdoutReason = & (Get-Module Intelligence_CodexCLI) { param($a) $s = Invoke-CodexCLIExecution $a ([pscustomobject]@{Prompt='x';ModelKey='fixture-stdout-flood'}); @($s.GetEntries() | ForEach-Object Message) -join ' | ' } $adapter
 Assert ($stdoutReason -match 'output limit exceeded') 'Stdout flood failed for a reason other than its bound.'
 $jacket.CodexCLI.PSObject.Properties.Remove('MaxEventBytes')
 $jacket.CodexCLI | Add-Member -NotePropertyName MaxStderrBytes -NotePropertyValue 4096
 Assert (Send ([pscustomobject]@{ Prompt='x'; ModelKey='fixture-stderr-flood' })).Failure() 'Stderr capture limit was not enforced.'
-$stderrReason = & (Get-Module Network_CodexCLI) { param($a) $s = Invoke-CodexCLIExecution $a ([pscustomobject]@{Prompt='x';ModelKey='fixture-stderr-flood'}); @($s.GetEntries() | ForEach-Object Message) -join ' | ' } $adapter
+$stderrReason = & (Get-Module Intelligence_CodexCLI) { param($a) $s = Invoke-CodexCLIExecution $a ([pscustomobject]@{Prompt='x';ModelKey='fixture-stderr-flood'}); @($s.GetEntries() | ForEach-Object Message) -join ' | ' } $adapter
 Assert ($stderrReason -match 'output limit exceeded') 'Stderr flood failed for a reason other than its bound.'
 $jacket.CodexCLI.PSObject.Properties.Remove('MaxStderrBytes')
-$module = Get-Module Network_CodexCLI
+$module = Get-Module Intelligence_CodexCLI
 
 & $module {
     Assert-CodexCLIEvents "{`"type`":`"thread.started`"}`n{`"type`":`"future.event`"}`n{`"type`":`"turn.completed`"}" 0
@@ -192,7 +192,7 @@ $schemaCases = @(
 foreach ($case in $schemaCases) {
     $candidate = $schema | ConvertTo-Json -Depth 10 | ConvertFrom-Json -Depth 10
     & $case.Change $candidate
-    $preflight = & (Get-Module Network_CodexCLI) { param($value) Resolve-CodexCLISchema $value | Select-Object -Last 1 } $candidate
+    $preflight = & (Get-Module Intelligence_CodexCLI) { param($value) Resolve-CodexCLISchema $value | Select-Object -Last 1 } $candidate
     Assert ($preflight.Failure() -and -not $preflight.HasResult()) "Schema $($case.Name) passed direct preflight."
     $invocationLog = Join-Path $workspace 'fixture-invocations.log'
     $beforeCalls = if ([IO.File]::Exists($invocationLog)) { [IO.File]::ReadAllLines($invocationLog).Count } else { 0 }
@@ -229,10 +229,10 @@ $bootstrap.SetResult([pscustomobject]@{}) | Out-Null
 $conductorResult = New-Conductor -HostConductor $null -ConductionSignal $bootstrap | Select-Object -Last 1
 Assert (-not $conductorResult.Failure() -and $conductorResult.HasResult()) 'Routing conductor failed.'
 $conductor = $conductorResult.GetResult()
-$mappedProbe = Resolve-PathFromDictionary -Dictionary $conductor.Signal -Path '*.#.Adapters.*.#.MappedNetwork' | Select-Object -Last 1
-Assert (-not $mappedProbe.Failure() -and $mappedProbe.HasResult()) 'MappedNetwork unavailable.'
-$typedConstructed = & (Get-Module Network_CodexCLI) { param($mapped) [Network_CodexCLI]::new($mapped) } $mappedProbe.GetResult($true)
-Assert ($typedConstructed.MappedAdapter -eq $mappedProbe.GetResult($true)) 'MappedNetworkAdapter constructor failed.'
+$mappedProbe = Resolve-PathFromDictionary -Dictionary $conductor.Signal -Path '*.#.Adapters.*.#.MappedIntelligence' | Select-Object -Last 1
+Assert (-not $mappedProbe.Failure() -and $mappedProbe.HasResult()) 'MappedIntelligence unavailable.'
+$typedConstructed = & (Get-Module Intelligence_CodexCLI) { param($mapped) [Intelligence_CodexCLI]::new($mapped) } $mappedProbe.GetResult($true)
+Assert ($typedConstructed.MappedAdapter -eq $mappedProbe.GetResult($true)) 'MappedIntelligenceAdapter constructor failed.'
 $conductorJacket = [Signal]::Start('CodexCLI.Routing.Conductor') | Select-Object -Last 1
 $conductorJacket.SetJacket($conductor.Signal) | Out-Null
 $conductorJacket.SetPointer($conductor.Signal.GetPointer()) | Out-Null
@@ -242,10 +242,10 @@ $runSignal.SetPointer($conductor.Signal.GetPointer()) | Out-Null
 $itemSignal = [Signal]::Start('CodexCLI.Routing.Item') | Select-Object -Last 1
 $itemSignal.SetPointer($conductor.Signal.GetPointer()) | Out-Null
 $registration = Register-AdapterToMappedSlot -ConductorJacketSignal $conductor.Signal -Signal $runSignal -ConductionContext $conductor.Signal -Adapter $adapter | Select-Object -Last 1
-Assert (-not $registration.Failure()) 'Network.AI registration failed.'
-$routedPlan = [pscustomobject]@{ Adapter='Network.AI'; Activity='SendMessage'; Config=[pscustomobject]@{ Prompt='routed' } }
+Assert (-not $registration.Failure()) 'Intelligence.AI registration failed.'
+$routedPlan = [pscustomobject]@{ Adapter='Intelligence.AI'; Activity='SendMessage'; Config=[pscustomobject]@{ Prompt='routed' } }
 $routed = Invoke-MappedAdapter -Adapter $routedPlan.Adapter -Activity $routedPlan.Activity -Signal $runSignal -Plan $routedPlan -ItemSignal $itemSignal | Select-Object -Last 1
-Assert (-not $routed.Failure() -and $routed.HasResult()) 'Network.AI mapped route failed.'
+Assert (-not $routed.Failure() -and $routed.HasResult()) 'Intelligence.AI mapped route failed.'
 Assert (($routed.GetResult() | ConvertFrom-Json).choices[0].message.content -ceq 'routed') 'Mapped route lost result.'
 $imageFile = Join-Path $workspace 'pixel.png'
 [IO.File]::WriteAllBytes($imageFile, [Convert]::FromBase64String('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Y9O3wAAAABJRU5ErkJggg=='))
@@ -286,8 +286,12 @@ finally {
     if ([IO.Directory]::Exists($outsideRoot)) { [IO.Directory]::Delete($outsideRoot,$true) }
     $jacket.CodexCLI.AllowedLocalImageRoots = @($workspace)
 }
-$utility = Get-Content 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/Plans/SDAUtility.Json' -Raw | ConvertFrom-Json -Depth 100
-$artifact = Get-Content 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/SDA/Artifact_Curation.Json' -Raw | ConvertFrom-Json -Depth 100
+$utilityPath = 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/Plans/SDAUtility.Json'
+$artifactPath = 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/SDA/Artifact_Curation.Json'
+$utilityBytes = [IO.File]::ReadAllBytes($utilityPath)
+$artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
+$utility = [Text.Encoding]::UTF8.GetString($utilityBytes) | ConvertFrom-Json -Depth 100
+$artifact = [Text.Encoding]::UTF8.GetString($artifactBytes) | ConvertFrom-Json -Depth 100
 $utilitySteps = @($utility.Phases | Where-Object Name -eq 'AskAIQuestion' | Select-Object -First 1).Steps
 $utilitySend = @($utilitySteps | Where-Object Name -eq 'SendAIprompt')[0]
 $utilityHandle = @($utilitySteps | Where-Object Name -eq 'ProcessAIRequest')[0]
@@ -295,6 +299,18 @@ $artifactSteps = @($artifact.Phases | Where-Object Name -eq 'AskAIQuestion' | Se
 $artifactSend = @($artifactSteps | Where-Object Name -eq 'SendAIprompt')[0]
 $artifactHandle = @($artifactSteps | Where-Object Name -eq 'ProcessAIRequest')[0]
 Assert ($utilitySend.Adapter -ceq 'Network.AI' -and $utilityHandle.Activity -ceq 'HandleMessage' -and $artifactSend.Adapter -ceq 'Network.AI' -and $artifactHandle.Activity -ceq 'HandleMessage') 'Named source steps changed.'
+$sourceSteps = @($utilitySend,$utilityHandle,$artifactSend,$artifactHandle)
+$sourceBefore = @($sourceSteps | ForEach-Object { $_ | ConvertTo-Json -Depth 40 -Compress })
+$oldRoute = Invoke-MappedAdapter -Adapter $utilitySend.Adapter -Activity $utilitySend.Activity -Signal $runSignal -Plan $utilitySend -ItemSignal $itemSignal | Select-Object -Last 1
+Assert ($oldRoute.Failure()) 'Original Network.AI route unexpectedly succeeded.'
+$utilitySend = $utilitySend | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$utilityHandle = $utilityHandle | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$artifactSend = $artifactSend | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$artifactHandle = $artifactHandle | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$utilitySend.Adapter = 'Intelligence.AI'
+$artifactSend.Adapter = 'Intelligence.AI'
+$utilityHandle.Adapter = 'Intelligence.AI'
+$artifactHandle.Adapter = 'Intelligence.AI'
 $utilitySend.Config.Prompt.System = 'system'
 $utilitySend.Config.Prompt.Texts = @('one','','two','')
 $utilitySend.Config.Prompt.Media = @([pscustomobject]@{ MediaUrl=''; MediaType='image' })
@@ -303,7 +319,7 @@ Assert (-not $utilityResult.Failure() -and (($utilityResult.GetResult() | Conver
 $artifactSend.Config.PSObject.Properties.Remove('Model')
 $artifactSend.Config | Add-Member -NotePropertyName ModelKey -NotePropertyValue 'fixture' -Force
 $artifactSend.Config.Prompt = [pscustomobject]@{ System='artifact system'; Texts=@('artifact prompt'); Media=@() }
-$normalizedArtifact = & (Get-Module Network_CodexCLI) {
+$normalizedArtifact = & (Get-Module Intelligence_CodexCLI) {
     param($config,$jacket)
     $runtimeSignal = Resolve-CodexCLIRuntime $jacket
     Assert (-not $runtimeSignal.Failure() -and $runtimeSignal.HasResult()) 'Runtime normalization failed.'
@@ -323,7 +339,12 @@ $utilityHandle.Path = $utilityHandle.Path.Replace('[Memory.Plan.Config.Attribute
 $graph.RegisterResultAsSignal('Utility_Response',($artifactResult.GetResult() | ConvertFrom-Json -Depth 10)) | Out-Null
 $utilityHandled = Invoke-MappedAdapter -Adapter $utilityHandle.Adapter -Activity $utilityHandle.Activity -Signal $runSignal -Plan $utilityHandle -ItemSignal $itemSignal | Select-Object -Last 1
 Assert (-not $utilityHandled.Failure() -and $utilityHandled.GetResult().answer -ceq 'ok') 'SDAUtility named extraction/Json formatting failed.'
-& (Get-Module Network_CodexCLI) {
+for ($index=0; $index -lt $sourceSteps.Count; $index++) {
+    Assert (($sourceSteps[$index] | ConvertTo-Json -Depth 40 -Compress) -ceq $sourceBefore[$index]) 'Named consumer source step was mutated.'
+}
+Assert ([Linq.Enumerable]::SequenceEqual([byte[]]$utilityBytes,[byte[]][IO.File]::ReadAllBytes($utilityPath))) 'SDAUtility source file changed.'
+Assert ([Linq.Enumerable]::SequenceEqual([byte[]]$artifactBytes,[byte[]][IO.File]::ReadAllBytes($artifactPath))) 'Artifact_Curation source file changed.'
+& (Get-Module Intelligence_CodexCLI) {
     param($jacket,$workspace)
     $initSignal = Initialize-CodexCLIHttpType | Select-Object -Last 1
     Assert (-not $initSignal.Failure() -and $initSignal.HasResult()) 'HTTPS type initialization failed.'
@@ -350,7 +371,7 @@ Assert (-not $utilityHandled.Failure() -and $utilityHandled.GetResult().answer -
     }
     finally { [IO.Directory]::Delete($owned,$true) }
 } $jacket $workspace
-& (Get-Module Network_CodexCLI) {
+& (Get-Module Intelligence_CodexCLI) {
     $initSignal = Initialize-CodexCLIHttpType | Select-Object -Last 1
     Assert (-not $initSignal.Failure() -and $initSignal.HasResult()) 'Repeated HTTPS type initialization failed.'
     $hosts = [string[]]@('allowed.example')
@@ -407,7 +428,7 @@ Assert (-not $utilityHandled.Failure() -and $utilityHandled.GetResult().answer -
     }
     finally { $server.Dispose() }
 }
-& (Get-Module Network_CodexCLI) {
+& (Get-Module Intelligence_CodexCLI) {
     param($adapter,$signal,$jacket)
     $jacket.CodexCLI | Add-Member -NotePropertyName AllowedImageHosts -NotePropertyValue @('*')
     $jacket.CodexCLI | Add-Member -NotePropertyName MaxImageBytes -NotePropertyValue 1024
@@ -450,7 +471,7 @@ Assert (-not $utilityHandled.Failure() -and $utilityHandled.GetResult().answer -
         Remove-Variable CodexCLIImageFixtureServer -Scope Global -ErrorAction SilentlyContinue
     }
 } $adapter $signal $jacket
-& (Get-Module Network_CodexCLI) {
+& (Get-Module Intelligence_CodexCLI) {
     param($adapter,$signal)
     $originalCleanup = (Get-Command Remove-CodexCLIInvocationDirectory).ScriptBlock
     $global:CodexCLICleanupFixturePaths = @()

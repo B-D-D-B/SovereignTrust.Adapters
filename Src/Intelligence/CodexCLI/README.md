@@ -1,17 +1,17 @@
-# Network.CodexCLI
+# Intelligence.CodexCLI
 
-This mapped network adapter runs `SendMessage` plans through a separately installed Codex CLI and returns JSON text with `choices[0].message.role = "assistant"` and `choices[0].message.content` set to the final response. `HandleMessage` uses the existing SignalGraph path resolver and optional Foundation Format condenser. The module exports only `Resolve-Network_CodexCLI`. Import and `Construct` do not run Codex.
+This mapped intelligence adapter runs `SendMessage` plans through a separately installed Codex CLI and returns JSON text with `choices[0].message.role = "assistant"` and `choices[0].message.content` set to the final response. `HandleMessage` uses the existing SignalGraph path resolver and optional Foundation Format condenser. The module exports only `Resolve-Intelligence_CodexCLI`. Import and `Construct` do not run Codex.
 
 ## Trusted jacket
 
-The Foundation-hydrated mapped jacket has `Name`, `VirtualPath`, `IsMapped`, root-level `DefaultModelKey` and `Profiles`, and a nested `CodexCLI` object. Each profile maps a unique `ModelKey` to a provider `Model` and `ReasoningEffort`. `CodexCLI` supplies an absolute existing `ExecutablePath`, an absolute existing dedicated `Workspace`, and `AuthenticationMode` (`Saved` or `ApiKey`). A jacket mapped to `Network.AI` uses `SovereignTrust.Adapters.Network.CodexCLI.AI.Persistent.Run`; a separate jacket mapped to `Network.CodexCLI` uses `SovereignTrust.Adapters.Network.CodexCLI.CodexCLI.Persistent.Run`. Saved mode also requires an existing absolute `CodexHome` with a previously completed CLI sign-in. ApiKey mode requires a nonblank hydrated `ApiKey`; it is supplied only to the child as `CODEX_API_KEY`. Neither mode reads auth files or changes the parent process environment. An extra nested `Environment` map is rejected.
+The Foundation-hydrated mapped jacket has `Name`, `VirtualPath`, `IsMapped`, root-level `DefaultModelKey` and `Profiles`, and a nested `CodexCLI` object. Each profile maps a unique `ModelKey` to a provider `Model` and `ReasoningEffort`. `CodexCLI` supplies an absolute existing `ExecutablePath`, an absolute existing dedicated `Workspace`, and `AuthenticationMode` (`Saved` or `ApiKey`). A jacket mapped to `Intelligence.AI` uses `SovereignTrust.Adapters.Intelligence.CodexCLI.AI.Persistent.Run`; a separate jacket mapped to `Intelligence.CodexCLI` uses `SovereignTrust.Adapters.Intelligence.CodexCLI.CodexCLI.Persistent.Run`. Saved mode also requires an existing absolute `CodexHome` with a previously completed CLI sign-in. ApiKey mode requires a nonblank hydrated `ApiKey`; it is supplied only to the child as `CODEX_API_KEY`. Neither mode reads auth files or changes the parent process environment. An extra nested `Environment` map is rejected.
 
 Synthetic jacket shape (Foundation replaces the example key token before `Construct`):
 
 ```json
 {
   "Name": "CodexCLIAI",
-  "VirtualPath": "SovereignTrust.Adapters.Network.CodexCLI.AI.Persistent.Run",
+  "VirtualPath": "SovereignTrust.Adapters.Intelligence.CodexCLI.AI.Persistent.Run",
   "IsMapped": true,
   "Kind": "Network",
   "Slot": "AI",
@@ -46,6 +46,6 @@ The CLI receives one flattened text prompt, so a `System` section does not carry
 
 ## Checks
 
-From the SovereignTrust.Adapters root, run `pwsh -NoProfile -File Src/Network/CodexCLI/Tests/Run-CodexCLIChecks.ps1`. It builds a harmless .NET child fixture, checks actual OS transport and process-tree termination, bounded output and deadline behavior, JSONL/final separation, schema validation, local and HTTPS image handling, production loader/deferred hydration, both mapped routes, and named unchanged consumer steps with synthetic hydrated input. The fixture requires a local .NET SDK. Generated fixture build files are ignored.
+From the SovereignTrust.Adapters root, run `pwsh -NoProfile -File Src/Intelligence/CodexCLI/Tests/Run-CodexCLIChecks.ps1`. It builds a harmless .NET child fixture, checks actual OS transport and process-tree termination, bounded output and deadline behavior, JSONL/final separation, schema validation, local and HTTPS image handling, production loader/deferred hydration, both mapped routes, and named unchanged consumer steps with synthetic hydrated input. The fixture requires a local .NET SDK. Generated fixture build files are ignored.
 
-Live checks are opt-in: set `CODEXCLI_LIVE_READY=1`, `CODEXCLI_LIVE_EXECUTABLE`, `CODEXCLI_LIVE_WORKSPACE`, `CODEXCLI_LIVE_MODEL`, and `CODEXCLI_LIVE_AUTH_MODE` (`Saved` with `CODEXCLI_LIVE_CODEX_HOME`, or `ApiKey` with `CODEXCLI_LIVE_API_KEY`), then run `pwsh -NoProfile -File Src/Network/CodexCLI/Tests/Run-CodexCLILiveIntegration.ps1`. Exit 77 means prerequisites were skipped. The live script checks text and a small structured response; it makes no media claim.
+Live checks are opt-in: set `CODEXCLI_LIVE_READY=1`, `CODEXCLI_LIVE_EXECUTABLE`, `CODEXCLI_LIVE_WORKSPACE`, `CODEXCLI_LIVE_MODEL`, and `CODEXCLI_LIVE_AUTH_MODE` (`Saved` with `CODEXCLI_LIVE_CODEX_HOME`, or `ApiKey` with `CODEXCLI_LIVE_API_KEY`), then run `pwsh -NoProfile -File Src/Intelligence/CodexCLI/Tests/Run-CodexCLILiveIntegration.ps1`. Exit 77 means prerequisites were skipped. The live script checks text and a small structured response; it makes no media claim.

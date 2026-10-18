@@ -27,8 +27,8 @@
     },
     "Classes": [
         {
-            "Name": "Network_AzureStorageQueue",
-            "Source": "Network_AzureStorageQueue.ps1"
+            "Name": "Storage_LocalFileSystem",
+            "Source": "Storage_LocalFileSystem.ps1"
         }
     ],
     "Dependencies": {

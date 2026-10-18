@@ -14,12 +14,12 @@ if (-not (Get-Module -Name $stModuleName)) {
 # . "$PSScriptRoot/Write-StorageQueueApi.ps1"
 
 class Storage_AzureKeyVault {
-    [MappedQueueAdapter]$MappedAdapter
+    [object]$MappedAdapter
     [Signal]$Signal
 
     Storage_AzureKeyVault() { }
 
-    Storage_AzureKeyVault([MappedQueueAdapter]$mappedAdapter) {
+    Storage_AzureKeyVault([object]$mappedAdapter) {
         $this.MappedAdapter = $mappedAdapter
     }
 

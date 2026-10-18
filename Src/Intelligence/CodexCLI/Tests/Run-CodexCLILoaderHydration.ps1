@@ -2,7 +2,7 @@ using module SignalGraph
 
 $ErrorActionPreference = 'Stop'
 $foundationManifest = Join-Path $PSScriptRoot '../../../../../SovereignTrust.Foundation/Src/PowerShell/SovereignTrust.Foundation.psd1'
-$adapterManifest = Join-Path $PSScriptRoot '../PowerShell/Network_CodexCLI.psd1'
+$adapterManifest = Join-Path $PSScriptRoot '../PowerShell/Intelligence_CodexCLI.psd1'
 $fixtureExe = Join-Path $PSScriptRoot 'FixtureCli/out/FixtureCli.exe'
 $workspace = Join-Path $PSScriptRoot 'FixtureWorkspace'
 if (-not [IO.File]::Exists($fixtureExe)) { throw 'Build the offline fixture before loader checks.' }
@@ -17,8 +17,8 @@ $global:CodexCLIHydrationCount = 0
     Set-Item -Path Function:script:Resolve-DependencyModuleFromGraph -Value {
         param([Signal]$Signal, [object]$ConductionContext, [string]$WirePath)
         if ($WirePath -cnotin @(
-            'SovereignTrust.Adapters.Network.CodexCLI.CodexCLI.Persistent.Run',
-            'SovereignTrust.Adapters.Network.CodexCLI.AI.Persistent.Run')) { throw 'Unexpected CodexCLI loader wire path.' }
+            'SovereignTrust.Adapters.Intelligence.CodexCLI.CodexCLI.Persistent.Run',
+            'SovereignTrust.Adapters.Intelligence.CodexCLI.AI.Persistent.Run')) { throw 'Unexpected CodexCLI loader wire path.' }
         return Resolve-ModulePathSignal -WirePath $WirePath
     }
     Set-Item -Path Function:script:Invoke-CondenserAdapter -Value {
@@ -31,7 +31,7 @@ $global:CodexCLIHydrationCount = 0
         $hydrated = [pscustomobject]@{
             Name=$merged.Name; VirtualPath=$merged.VirtualPath; IsMapped=$merged.IsMapped
             DefaultModelKey=$merged.DefaultModelKey; Profiles=$merged.Profiles
-            Kind='Network'; Slot=$merged.Slot; HydrationMarker='synthetic-deferred'
+            Kind='Intelligence'; Slot=$merged.Slot; HydrationMarker='synthetic-deferred'
             CodexCLI=[pscustomobject]@{
                 ExecutablePath=$merged.CodexCLI.ExecutablePath; Workspace=$merged.CodexCLI.Workspace
                 AuthenticationMode='ApiKey'; ApiKey='fixture-key'; TimeoutSeconds=3
@@ -60,8 +60,8 @@ $itemSignal.SetPointer($conductor.Signal.GetPointer()) | Out-Null
 
 foreach ($slot in @('CodexCLI','AI')) {
     $source = [pscustomobject]@{
-        Name="CodexCLI$slot"; VirtualPath="SovereignTrust.Adapters.Network.CodexCLI.$slot.Persistent.Run"
-        IsMapped=$true; Kind='Network'; Slot=$slot
+        Name="CodexCLI$slot"; VirtualPath="SovereignTrust.Adapters.Intelligence.CodexCLI.$slot.Persistent.Run"
+        IsMapped=$true; Kind='Intelligence'; Slot=$slot
         DefaultModelKey='fixture'; Profiles=@([pscustomobject]@{ ModelKey='fixture'; Model='fixture'; ReasoningEffort='medium' })
         CodexCLI=[pscustomobject]@{
             ExecutablePath=$fixtureExe; Workspace=$workspace; AuthenticationMode='ApiKey'
@@ -78,12 +78,12 @@ foreach ($slot in @('CodexCLI','AI')) {
     if ($resolved.Failure()) { Write-Output (@($resolved.GetEntries() | ForEach-Object Message) -join ' | ') }
     Assert (-not $resolved.Failure() -and $resolved.HasResult()) "Production loader failed for $slot."
     $adapter = $resolved.GetResult()
-    Assert ($adapter.GetType().Name -ceq 'Network_CodexCLI' -and $adapter.Configuration.HydrationMarker -ceq 'synthetic-deferred') "Hydrated Construct failed for $slot."
+    Assert ($adapter.GetType().Name -ceq 'Intelligence_CodexCLI' -and $adapter.Configuration.HydrationMarker -ceq 'synthetic-deferred') "Hydrated Construct failed for $slot."
     Assert ($adapter.Configuration.CodexCLI.ApiKey -ceq 'fixture-key' -and $adapter.Configuration.CodexCLI.ExecutablePath -ceq $fixtureExe) 'Nested hydrated settings were lost.'
     Assert (($source | ConvertTo-Json -Depth 20 -Compress) -ceq $sourceBefore) 'Loader mutated source jacket.'
     $registered = Register-AdapterToMappedSlot -ConductorJacketSignal $conductor.Signal -Signal $runSignal -ConductionContext $conductor.Signal -Adapter $adapter | Select-Object -Last 1
     Assert (-not $registered.Failure()) "Mapped registration failed for $slot."
-    $plan = [pscustomobject]@{ Adapter="Network.$slot"; Activity='SendMessage'; Config=[pscustomobject]@{ Prompt="loader $slot" } }
+    $plan = [pscustomobject]@{ Adapter="Intelligence.$slot"; Activity='SendMessage'; Config=[pscustomobject]@{ Prompt="loader $slot" } }
     $sent = Invoke-MappedAdapter -Adapter $plan.Adapter -Activity $plan.Activity -Signal $runSignal -Plan $plan -ItemSignal $itemSignal | Select-Object -Last 1
     Assert (-not $sent.Failure() -and (($sent.GetResult() | ConvertFrom-Json).choices[0].message.content -ceq "loader $slot")) "Mapped route failed for $slot."
 }
@@ -91,8 +91,12 @@ Assert ($global:CodexCLIHydrationCount -eq 2) 'Deferred hydration did not run ex
 
 # Restore the real Foundation hydration route before exercising named consumer steps.
 & $foundation { param($original) Set-Item -Path Function:script:Invoke-CondenserAdapter -Value $original } $originalCondenser
-$utility = Get-Content 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/Plans/SDAUtility.Json' -Raw | ConvertFrom-Json -Depth 100
-$artifact = Get-Content 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/SDA/Artifact_Curation.Json' -Raw | ConvertFrom-Json -Depth 100
+$utilityPath = 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/Plans/SDAUtility.Json'
+$artifactPath = 'C:/GitHub/SiliconDreamArtists/SDAFusion-Content/SDA/SDA/Artifact_Curation.Json'
+$utilityBytes = [IO.File]::ReadAllBytes($utilityPath)
+$artifactBytes = [IO.File]::ReadAllBytes($artifactPath)
+$utility = [Text.Encoding]::UTF8.GetString($utilityBytes) | ConvertFrom-Json -Depth 100
+$artifact = [Text.Encoding]::UTF8.GetString($artifactBytes) | ConvertFrom-Json -Depth 100
 $utilitySteps = @($utility.Phases | Where-Object Name -eq 'AskAIQuestion' | Select-Object -First 1).Steps
 $artifactSteps = @($artifact.Phases | Where-Object Name -eq 'AskAIQuestion' | Select-Object -First 1).Steps
 $utilitySend = @($utilitySteps | Where-Object Name -eq 'SendAIprompt')[0]
@@ -101,6 +105,17 @@ $artifactSend = @($artifactSteps | Where-Object Name -eq 'SendAIprompt')[0]
 $artifactHandle = @($artifactSteps | Where-Object Name -eq 'ProcessAIRequest')[0]
 $sourceSteps = @($utilitySend,$utilityHandle,$artifactSend,$artifactHandle)
 $sourceBefore = @($sourceSteps | ForEach-Object { $_ | ConvertTo-Json -Depth 40 -Compress })
+Assert ($utilitySend.Adapter -ceq 'Network.AI' -and $artifactSend.Adapter -ceq 'Network.AI') 'Original source routes changed.'
+$originalRoute = Invoke-MappedAdapter -Adapter $utilitySend.Adapter -Activity $utilitySend.Activity -Signal $runSignal -Plan $utilitySend -ItemSignal $itemSignal | Select-Object -Last 1
+Assert ($originalRoute.Failure()) 'Original Network.AI route unexpectedly succeeded.'
+$utilitySend = $utilitySend | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$utilityHandle = $utilityHandle | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$artifactSend = $artifactSend | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$artifactHandle = $artifactHandle | ConvertTo-Json -Depth 40 | ConvertFrom-Json -Depth 40
+$utilitySend.Adapter = 'Intelligence.AI'
+$artifactSend.Adapter = 'Intelligence.AI'
+$utilityHandle.Adapter = 'Intelligence.AI'
+$artifactHandle.Adapter = 'Intelligence.AI'
 $graph = $itemSignal.GetPointer()
 $graph.RegisterResultAsSignal('Utility_Result','%AI') | Out-Null
 $graph.RegisterResultAsSignal('Utility_Prompt','') | Out-Null
@@ -154,5 +169,7 @@ Assert (-not $utilityHandled.Failure() -and $utilityHandled.GetResult().answer -
 for ($index=0; $index -lt $sourceSteps.Count; $index++) {
     Assert (($sourceSteps[$index] | ConvertTo-Json -Depth 40 -Compress) -ceq $sourceBefore[$index]) 'Named consumer source step was mutated.'
 }
+Assert ([Linq.Enumerable]::SequenceEqual([byte[]]$utilityBytes,[byte[]][IO.File]::ReadAllBytes($utilityPath))) 'SDAUtility source file changed.'
+Assert ([Linq.Enumerable]::SequenceEqual([byte[]]$artifactBytes,[byte[]][IO.File]::ReadAllBytes($artifactPath))) 'Artifact_Curation source file changed.'
 if ([IO.File]::Exists((Join-Path $workspace 'fixture-invocations.log'))) { [IO.File]::Delete((Join-Path $workspace 'fixture-invocations.log')) }
 Write-Output 'PASS: production loader deferred hydration, Construct, both mapped routes, and named consumer steps.'

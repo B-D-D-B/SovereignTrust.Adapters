@@ -1,7 +1,7 @@
 using module SignalGraph
 
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot '../Src/Network/AzureFoundry/PowerShell/Network_AzureFoundry.psd1') -Force
+Import-Module (Join-Path $PSScriptRoot '../Src/Intelligence/AzureFoundry/PowerShell/Intelligence_AzureFoundry.psd1') -Force
 function Assert([bool]$Condition, [string]$Message) { if (-not $Condition) { throw $Message } }
 
 $jacket = [pscustomobject]@{
@@ -12,12 +12,12 @@ $jacket = [pscustomobject]@{
     )
     Addresses=@('https://fixture.openai.azure.com/openai/v1/responses'); Resource=@('fixture-key')
 }
-$adapter = Resolve-Network_AzureFoundry
+$adapter = Resolve-Intelligence_AzureFoundry
 $constructed = $adapter.Construct($jacket)
 Assert (-not $constructed.Failure()) 'Valid Foundry jacket failed construction.'
 $signal = [Signal]::Start('Foundry.Tests') | Select-Object -Last 1
 
-& (Get-Module Network_AzureFoundry) {
+& (Get-Module Intelligence_AzureFoundry) {
     Set-Item Function:script:Invoke-MappedAdapter -Value {
         param($Adapter,$Activity,$Signal,$Plan,$ItemSignal)
         $global:FoundryRequest = $Plan
@@ -50,7 +50,7 @@ Assert (-not $image.Failure() -and $global:FoundryRequest.Config.Body.input[1].c
 $plan.Config.ModelKey = 'unknown'
 Assert ($adapter.Invoke('Foundry','SendMessage',$signal,$plan,$signal).Failure()) 'Unknown ModelKey was accepted.'
 $plan.Config.ModelKey = 'Worker-Medium'
-& (Get-Module Network_AzureFoundry) {
+& (Get-Module Intelligence_AzureFoundry) {
     Set-Item Function:script:Invoke-MappedAdapter -Value {
         $result = [Signal]::Start('Foundry.MockRestFailure') | Select-Object -Last 1
         $null = $result.LogCritical('Fixture HTTP failure.')
@@ -59,6 +59,6 @@ $plan.Config.ModelKey = 'Worker-Medium'
 }
 Assert ($adapter.Invoke('Foundry','SendMessage',$signal,$plan,$signal).Failure()) 'REST failure was not propagated.'
 $jacket.Profiles += [pscustomobject]@{ ModelKey='Worker-Medium'; Model='duplicate'; ReasoningEffort='medium' }
-Assert ((Resolve-Network_AzureFoundry).Construct($jacket).Failure()) 'Duplicate ModelKey was accepted.'
+Assert ((Resolve-Intelligence_AzureFoundry).Construct($jacket).Failure()) 'Duplicate ModelKey was accepted.'
 
 Write-Output 'PASS: Foundry profile selection, Responses body, normalized result, and invalid keys.'

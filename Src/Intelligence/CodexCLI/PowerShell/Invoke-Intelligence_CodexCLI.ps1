@@ -1,9 +1,9 @@
-function Invoke-Network_CodexCLI {
+function Invoke-Intelligence_CodexCLI {
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Adapter, [Parameter(Mandatory)][string]$Slot,
         [Parameter(Mandatory)][string]$Activity, [Signal]$ConductionSignal,
         [Parameter(Mandatory)][object]$Plan, [Signal]$ItemSignal)
-    $opSignal = [Signal]::Start("Network_CodexCLI.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
+    $opSignal = [Signal]::Start("Intelligence_CodexCLI.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
     try {
         switch -CaseSensitive ($Activity) {
             'SendMessage' {
@@ -33,7 +33,7 @@ function Invoke-Network_CodexCLI {
                 $formatSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Format' -SignalLevel 'Warning' | Select-Object -Last 1
                 $format = if ($formatSignal.HasResult()) { $formatSignal.GetResult() } else { $null }
                 if ($null -ne $format -and -not [string]::IsNullOrWhiteSpace([string]$format)) {
-                    $formatSignal = [Signal]::Start('Network_CodexCLI.Format', $ItemSignal) | Select-Object -Last 1
+                    $formatSignal = [Signal]::Start('Intelligence_CodexCLI.Format', $ItemSignal) | Select-Object -Last 1
                     $formatSignal.SetJacket($messageSignal) | Out-Null
                     $formatSignal.SetPointer($ItemSignal.GetPointer()) | Out-Null
                     $formatted = Invoke-CondenserAdapter -Slot 'Format' -Activity $format -Plan $Plan -Signal $ConductionSignal -ItemSignal $formatSignal | Select-Object -Last 1

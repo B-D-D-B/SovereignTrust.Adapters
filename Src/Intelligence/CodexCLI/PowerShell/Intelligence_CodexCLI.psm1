@@ -12,7 +12,7 @@ if (-not (Get-Module -Name $foundationModuleName)) {
 . "$PSScriptRoot/New-CodexCLIProcess.ps1"
 . "$PSScriptRoot/Invoke-CodexCLIExecution.ps1"
 . "$PSScriptRoot/ConvertTo-CodexCLIJsonResult.ps1"
-. "$PSScriptRoot/Invoke-Network_CodexCLI.ps1"
-. "$PSScriptRoot/Network_CodexCLI.ps1"
+. "$PSScriptRoot/Invoke-Intelligence_CodexCLI.ps1"
+. "$PSScriptRoot/Intelligence_CodexCLI.ps1"
 
-Export-ModuleMember -Function Resolve-Network_CodexCLI
+Export-ModuleMember -Function Resolve-Intelligence_CodexCLI

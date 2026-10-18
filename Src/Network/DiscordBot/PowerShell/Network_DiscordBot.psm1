@@ -14,12 +14,12 @@ if (-not (Get-Module -Name $stModuleName)) {
 # . "$PSScriptRoot/Write-StorageNetworkApi.ps1"
 
 class Network_DiscordBot {
-    [MappedNetworkAdapter]$MappedAdapter
+    [object]$MappedAdapter
     [Signal]$Signal
 
     Network_DiscordBot() { }
 
-    Network_DiscordBot([MappedNetworkAdapter]$mappedAdapter) {
+    Network_DiscordBot([object]$mappedAdapter) {
         $this.MappedAdapter = $mappedAdapter
     }
 

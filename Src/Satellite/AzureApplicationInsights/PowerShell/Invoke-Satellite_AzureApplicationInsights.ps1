@@ -1,4 +1,4 @@
-function Invoke-Network_AzureFoundry()
+function Invoke-Satellite_AzureApplicationInsights()
 {
 
     param (

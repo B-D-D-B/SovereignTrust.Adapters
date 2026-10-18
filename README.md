@@ -28,14 +28,13 @@ Each folder contains:
 
 ### 📮 Azure Storage Queue
 ```
-Src/Network/AzureStorageQueue/PowerShell/
+Src/Queue/AzureStorageQueue/PowerShell/
 ```
 Enables SovereignTrust to relay and receive messages via Azure Storage Queues.
 
 Files:
-- `SovereignTrust.Adapters.Network.AzureStorageQueue.psm1`
-- `SovereignTrust.Adapters.Network.AzureStorageQueue.Manifest.json`
-- `SovereignTrust.Adapters.Network.AzureStorageQueue.Trainer.ps1`
+- `Queue_AzureStorageQueue.psm1`
+- `Queue_AzureStorageQueue.psd1`
 
 ### 🗂 Local File System
 ```

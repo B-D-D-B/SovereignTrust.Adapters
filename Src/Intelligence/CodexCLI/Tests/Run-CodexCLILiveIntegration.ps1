@@ -13,11 +13,11 @@ if (($env:CODEXCLI_LIVE_AUTH_MODE -ceq 'Saved' -and [string]::IsNullOrWhiteSpace
     Write-Output 'SKIP: live CodexCLI authentication prerequisite is absent.'
     exit 77
 }
-$manifest = Join-Path $PSScriptRoot '../PowerShell/Network_CodexCLI.psd1'
+$manifest = Join-Path $PSScriptRoot '../PowerShell/Intelligence_CodexCLI.psd1'
 Import-Module $manifest -Force
 $jacket = [pscustomobject]@{
-    Name='CodexCLILive'; VirtualPath='SovereignTrust.Adapters.Network.CodexCLI.AI.Persistent.Run'; IsMapped=$true
-    Kind='Network'; Slot='AI'
+    Name='CodexCLILive'; VirtualPath='SovereignTrust.Adapters.Intelligence.CodexCLI.AI.Persistent.Run'; IsMapped=$true
+    Kind='Intelligence'; Slot='AI'
     DefaultModelKey='live'; Profiles=@([pscustomobject]@{ ModelKey='live'; Model=$env:CODEXCLI_LIVE_MODEL; ReasoningEffort='medium' })
     CodexCLI=[pscustomobject]@{
         ExecutablePath=$env:CODEXCLI_LIVE_EXECUTABLE; Workspace=$env:CODEXCLI_LIVE_WORKSPACE
@@ -25,7 +25,7 @@ $jacket = [pscustomobject]@{
         ApiKey=$env:CODEXCLI_LIVE_API_KEY
     }
 }
-$adapter = Resolve-Network_CodexCLI
+$adapter = Resolve-Intelligence_CodexCLI
 if ($adapter.Construct($jacket).Failure()) { throw 'Live adapter construction failed.' }
 $signal = [Signal]::Start('CodexCLI.Live') | Select-Object -Last 1
 $plain = $adapter.Invoke('AI','SendMessage',$signal,[pscustomobject]@{Config=[pscustomobject]@{Prompt='Reply with one short greeting.'}},$signal)

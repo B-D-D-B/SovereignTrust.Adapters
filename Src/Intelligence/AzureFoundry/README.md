@@ -1,11 +1,11 @@
-# Network.AzureFoundry
+# Intelligence.AzureFoundry
 
-The `Network_AzureFoundry` module currently implements the `OpenAIResponses` API kind. It can be installed in multiple mapped slots; each slot has its own endpoint, credential, and model profiles. Other API kinds are rejected until their request handlers are implemented.
+The `Intelligence_AzureFoundry` module currently implements the `OpenAIResponses` API kind. It can be installed in multiple mapped slots; each slot has its own endpoint, credential, and model profiles. Other API kinds are rejected until their request handlers are implemented.
 
 ```json
 {
   "Name": "Foundry",
-  "VirtualPath": "SovereignTrust.Adapters.Network.AzureFoundry.Foundry.Persistent.Run",
+  "VirtualPath": "SovereignTrust.Adapters.Intelligence.AzureFoundry.Foundry.Persistent.Run",
   "IsMapped": true,
   "ApiKind": "OpenAIResponses",
   "AuthenticationMode": "ApiKey",

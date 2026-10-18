@@ -1,18 +1,18 @@
-class Network_CodexCLI {
+class Intelligence_CodexCLI {
     [object]$MappedAdapter
     [Signal]$Signal
     [object]$Configuration
 
-    Network_CodexCLI() {}
-    Network_CodexCLI([object]$mappedAdapter) { $this.MappedAdapter = $mappedAdapter }
+    Intelligence_CodexCLI() {}
+    Intelligence_CodexCLI([object]$mappedAdapter) { $this.MappedAdapter = $mappedAdapter }
 
     [Signal] Construct([object]$dictionary) {
-        $opSignal = [Signal]::Start('Network_CodexCLI.Construct') | Select-Object -Last 1
+        $opSignal = [Signal]::Start('Intelligence_CodexCLI.Construct') | Select-Object -Last 1
         try {
             if ($null -eq $dictionary) { throw 'CodexCLI configuration is required.' }
             $this.Configuration = $dictionary
-            $this.Signal = [Signal]::Start('Network_CodexCLI') | Select-Object -Last 1
-            $jacket = [Signal]::Start('Network_CodexCLI.Jacket') | Select-Object -Last 1
+            $this.Signal = [Signal]::Start('Intelligence_CodexCLI') | Select-Object -Last 1
+            $jacket = [Signal]::Start('Intelligence_CodexCLI.Jacket') | Select-Object -Last 1
             $jacket.SetResult($dictionary) | Out-Null
             $this.Signal.SetJacket($jacket) | Out-Null
             $opSignal.SetResult($this) | Out-Null
@@ -22,9 +22,9 @@ class Network_CodexCLI {
     }
 
     [Signal] Invoke([string]$Slot, [string]$Activity, [Signal]$ConductionSignal, [object]$Plan, [Signal]$ItemSignal) {
-        $opSignal = [Signal]::Start("Network_CodexCLI.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
+        $opSignal = [Signal]::Start("Intelligence_CodexCLI.Invoke:$Slot.$Activity", $ItemSignal) | Select-Object -Last 1
         try {
-            $activitySignal = Invoke-Network_CodexCLI -Adapter $this -Slot $Slot -Activity $Activity -ConductionSignal $ConductionSignal -Plan $Plan -ItemSignal $ItemSignal | Select-Object -Last 1
+            $activitySignal = Invoke-Intelligence_CodexCLI -Adapter $this -Slot $Slot -Activity $Activity -ConductionSignal $ConductionSignal -Plan $Plan -ItemSignal $ItemSignal | Select-Object -Last 1
             if ($opSignal.MergeSignalAndVerifyFailure($activitySignal)) { return $opSignal }
             if (-not $activitySignal.HasResult()) { throw 'CodexCLI activity produced no result.' }
             $opSignal.SetResult($activitySignal.GetResult()) | Out-Null
@@ -34,4 +34,4 @@ class Network_CodexCLI {
     }
 }
 
-function Resolve-Network_CodexCLI { return [Network_CodexCLI]::new() }
+function Resolve-Intelligence_CodexCLI { return [Intelligence_CodexCLI]::new() }

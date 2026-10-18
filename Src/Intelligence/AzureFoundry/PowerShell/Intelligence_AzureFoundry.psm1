@@ -8,23 +8,23 @@ if (-not (Get-Module -Name $stModuleName)) {
 
 . "$PSScriptRoot/Invoke-AzureFoundryOpenAIResponses.ps1"
 
-class Network_AzureFoundry {
+class Intelligence_AzureFoundry {
     [object]$MappedAdapter
     [Signal]$Signal
     [object]$Settings
 
-    Network_AzureFoundry() { }
+    Intelligence_AzureFoundry() { }
 
-    Network_AzureFoundry([object]$mappedAdapter) {
+    Intelligence_AzureFoundry([object]$mappedAdapter) {
         $this.MappedAdapter = $mappedAdapter
     }
 
     [Signal] Construct([object]$dictionary) {
-        $opSignal = [Signal]::Start("Network_AzureFoundry.Construct") | Select-Object -Last 1
+        $opSignal = [Signal]::Start("Intelligence_AzureFoundry.Construct") | Select-Object -Last 1
 
         try {
             if ($null -eq $dictionary) {
-                $opSignal.LogCritical("Cannot construct Network_AzureFoundry — provided dictionary is null.")
+                $opSignal.LogCritical("Cannot construct Intelligence_AzureFoundry — provided dictionary is null.")
                 return $opSignal
             }
 
@@ -32,16 +32,16 @@ class Network_AzureFoundry {
             if ($opSignal.MergeSignalAndVerifyFailure($settingsSignal) -or -not $settingsSignal.HasResult()) { return $opSignal }
             $this.Settings = $settingsSignal.GetResult()
 
-            $this.Signal = [Signal]::Start("Network_AzureFoundry") | Select-Object -Last 1
+            $this.Signal = [Signal]::Start("Intelligence_AzureFoundry") | Select-Object -Last 1
 
-            $jacket = [Signal]::Start("Network_AzureFoundry.Jacket") | Select-Object -Last 1
+            $jacket = [Signal]::Start("Intelligence_AzureFoundry.Jacket") | Select-Object -Last 1
             $jacket.SetResult($dictionary)
 
             $this.Signal.SetJacket($jacket)
-            $opSignal.LogInformation("Network_AzureFoundry constructed successfully with provided jacket.")
+            $opSignal.LogInformation("Intelligence_AzureFoundry constructed successfully with provided jacket.")
         }
         catch {
-            $opSignal.LogCritical("Error constructing Network_AzureFoundry: $_")
+            $opSignal.LogCritical("Error constructing Intelligence_AzureFoundry: $_")
         }
 
         return $opSignal
@@ -54,16 +54,16 @@ class Network_AzureFoundry {
         [object]$Plan,
         [Signal]$ItemSignal
     ) {
-        $opSignal = [Signal]::Start("Network_AzureFoundry.Invoke:$Slot.$Activity", $ConductionSignal) | Select-Object -Last 1
+        $opSignal = [Signal]::Start("Intelligence_AzureFoundry.Invoke:$Slot.$Activity", $ConductionSignal) | Select-Object -Last 1
 
         try {
             if (-not $ConductionSignal) {
-                $opSignal.LogCritical("Null ConductionSignal passed to Network_AzureFoundry.Invoke()")
+                $opSignal.LogCritical("Null ConductionSignal passed to Intelligence_AzureFoundry.Invoke()")
                 return $opSignal
             }
 
             if (-not $Activity) {
-                $opSignal.LogWarning("No Activity provided to Network_AzureFoundry.Invoke()")
+                $opSignal.LogWarning("No Activity provided to Intelligence_AzureFoundry.Invoke()")
                 return $opSignal
             }
 
@@ -140,16 +140,16 @@ class Network_AzureFoundry {
 
         }
         catch {
-            $opSignal.LogCritical("🔥 Exception in Network_AzureFoundry.Invoke: $($_.Exception.Message)", $null, $_)
+            $opSignal.LogCritical("🔥 Exception in Intelligence_AzureFoundry.Invoke: $($_.Exception.Message)", $null, $_)
         }
 
         return $opSignal
     }
 }
 
-function Resolve-Network_AzureFoundry {
-    $object = [Network_AzureFoundry]::new()
+function Resolve-Intelligence_AzureFoundry {
+    $object = [Intelligence_AzureFoundry]::new()
     return $object
 }
 
-Export-ModuleMember -Function Resolve-Network_AzureFoundry
+Export-ModuleMember -Function Resolve-Intelligence_AzureFoundry
