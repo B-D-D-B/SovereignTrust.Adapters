@@ -11,6 +11,7 @@ if (-not (Get-Module -Name $sgModuleName)) {
 . "$PSScriptRoot/Invoke-AzureStorageAccount_WriteObject.ps1"
 . "$PSScriptRoot/Invoke-AzureStorageAccount_ExistsObject.ps1"
 . "$PSScriptRoot/Invoke-AzureStorageAccount_DeleteObject.ps1"
+. "$PSScriptRoot/Invoke-AzureStorageAccount_ListObject.ps1"
 
 
 class Storage_AzureStorageAccount {
@@ -118,7 +119,7 @@ class Storage_AzureStorageAccount {
                 $virtualPath = $virtualPathSignal.GetResult()
             }
 
-            if ([string]::IsNullOrWhiteSpace([string]$virtualPath)) {
+            if ([string]::IsNullOrWhiteSpace([string]$virtualPath) -and $Activity -ine 'List') {
                 return $opSignal.LogCritical(
                     "The resolved storage virtual path is empty."
                 )
@@ -173,6 +174,17 @@ class Storage_AzureStorageAccount {
             $callSignal = $null
 
             switch ($Activity) {
+                "List" {
+                    $callSignal = Invoke-AzureStorageAccount_ListObject `
+                        -ConductionSignal $ConductionSignal `
+                        -ItemSignal $ItemSignal `
+                        -Plan $Plan `
+                        -VirtualPath ([string]$virtualPath) `
+                        -Resource $resource `
+                        -Addresses $addresses |
+                    Select-Object -Last 1
+                    break
+                }
                 "Read" {
                     $callSignal = Invoke-AzureStorageAccount_ReadObject `
                         -ConductionSignal $ConductionSignal `

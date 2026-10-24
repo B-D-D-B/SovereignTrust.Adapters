@@ -1,0 +1,4 @@
+Command: pwsh -NoProfile -File ./Src/Satellite/AzureApplicationInsights/Tests/Run-SatelliteChecks.ps1
+Exit: 0
+Output:
+PASS: Satellite construction, entry mutation, condenser delegation and fake REST success/failure.

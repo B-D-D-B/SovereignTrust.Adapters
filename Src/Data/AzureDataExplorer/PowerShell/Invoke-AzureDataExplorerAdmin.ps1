@@ -138,7 +138,8 @@ function Invoke-AzureDataExplorerAdmin {
     try { $response = Send-ADXAdminHttp -Uri $inputData.Uri -Database $inputData.Database -Command $inputData.Command -Token $token -RequestId $requestId }
     catch { return $signal.LogCritical("ADX Admin OutcomeUnknown; correlation $requestId.") }
     if ($response.StatusCode -lt 200 -or $response.StatusCode -ge 300) {
-        return $signal.LogCritical("ADX Admin HttpFailure; correlation $requestId.")
+        $content = $response.Content | ConvertFrom-Json 
+        return $signal.LogCritical("ADX Admin HttpFailure; correlation $requestId. (Message: $($content.error.message), Code: $($content.error.code), ActivityId: $($content.error.activityId) , StatusCode: $($response.StatusCode))")
     }
     try { $json = ConvertFrom-ADXAdminResponse -Content $response.Content }
     catch { return $signal.LogCritical("ADX Admin ResponseFailure; correlation $requestId.") }

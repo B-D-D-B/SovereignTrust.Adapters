@@ -2,7 +2,7 @@
 
 ## Activities
 
-`Admin` is implemented for reviewed Kusto management text. `Query` and `Delete` are not implemented; `WriteItem` and `WriteBatch` are legacy, unverified branches and must not be treated as supported ADX behavior.
+`Admin`, `Query`, `Write` and `Delete` have provider-free fake-boundary implementations. `Query` sends non-management Kusto text to `/v1/rest/query` and returns JSON text with typed rows in `ResultSets`. `Write` accepts one inline-ingest row into a safe table name; `Delete` accepts a soft-delete command scoped to one safe table and one quoted equality predicate. Both use the validated single-attempt management transport and return operation-labelled table receipts. A management receipt does not prove a row change; the selected plan must query the row state afterward. `WriteItem` and `WriteBatch` are legacy, unverified branches.
 
 `Admin` accepts `Plan.Config.CommandText` as one nonblank string beginning with `.`. The constructed adapter jacket supplies the single HTTPS engine address and database resource. The engine host must have a regional `*.kusto.windows.net` form. Caller-supplied URL, token, database, method, or legacy expected-target fields are rejected before token acquisition. The caller is responsible for reviewing the entire command and registered target; this provider does not parse or sandbox Kusto.
 

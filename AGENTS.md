@@ -1,0 +1,22 @@
+# AGENTS.md — Shared project workflow template
+
+Copy this file to a new sibling project's root as `AGENTS.md`. These links resolve in the current `C:/GitHub/SiliconDreamArtists/BDDB.AITooling` layout, both here and in the copy; update them if that shared repository moves. Copying this template supplies no project-specific authorization or acceptance state.
+
+## Authority and records
+
+- Shared [SP-01/SP-02](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/standard-practices.md>) own review routing, findings, remediation, safeguards and records. The [worker/reviewer cycle](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/worker-review-cycle.md>) owns roles, execution, recovery and lifecycle. Apply [D1–D8](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/technical-audit-rubric.md>) to proposed-action readiness and [R1–R8](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/result-audit-rubric.md>) to delivered-result acceptance. Invoke these authorities by ID; do not duplicate their rules.
+- Discover project authorities, requirements, paths, concrete contracts and publication rules from the consuming project's existing instructions and task. A missing applicable contract blocks only dependent work; do not invent one or infer that unrelated authorized work is blocked. Project policy takes precedence for its record location. Otherwise, use `Documentation/Projects/Working/` with one prefixed Working record per cycle and attributed phases. Preserve history and distinguish document readiness from observed software behavior.
+
+## Context and evidence economy
+
+- Execute in a newly initialized, isolated subsession; do not import unrelated chat or cross-project context.
+- When asked to write a prompt, append a `Files:` section at the bottom of the prompt itself with the full absolute `file:///C:/...` URI for every concrete local file referenced by the prompt. URI-escape spaces; do not invent paths. If there are no such files, write `Files: none`.
+- Summarize active telemetry on exactly one line: `[Status: Active/Frozen] | [Lifecycle: state] | [Model: identifier/effort] | [File: path] | [Tests: Pass/Fail/Total]`.
+- Omit conversational fillers and redundant summaries. Limit code changes, plans and technical reviews to minimal unified Git diff chunks; never output complete source files. Filter terminal output to the final execution vector and specific failing assertion; preserve the underlying evidence.
+
+## Roles and gates
+
+- Main coordination and worker subagents use Sol 6 medium (`gpt-6-sol`, `medium`); independent reviewer subagents use Astra 6 medium (`gpt-6-astra`, `medium`). User instructions and explicitly authorized scope take precedence. Record requested configuration and authoritative host-observed metadata separately; if telemetry is unavailable, state the limitation and rely only on an explicit configuration guarantee.
+- For a request to create or revise a plan, dispatch a Sol 6 medium worker subagent to draft it and a distinct Astra 6 medium reviewer subagent to audit the exact plan under D1–D8; do not execute it unless requested. For a request to execute a plan, dispatch a Sol 6 medium worker subagent for authorized execution after applicable exact READY and a distinct Astra 6 medium reviewer subagent for R1–R8 review of the frozen result; neither worker nor coordinator may award its own independent gate. Answer-, explanation- and status-only requests need no subagent dispatch; respond directly.
+- Register each function and follow the shared cycle's exact-snapshot lifecycle. An independent reviewer returns exact **READY** under D1–D8 before corrective execution; the worker executes only that revision. An independent R1–R8 result review returns **PASS**, **REMEDIATE** or **BLOCKED** for the frozen result. Review-pending grants no execution permission; a document-ready plan is not behavioral acceptance.
+- Apply [evidence-supported corrective continuation](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/worker-review-cycle.md#evidence-supported-corrective-continuation>), [operational recovery](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/worker-review-cycle.md#operational-failure-recovery>) and [stop/resume](<C:/GitHub/SiliconDreamArtists/BDDB.AITooling/guidance/worker-review-cycle.md#stop-block-and-resume>). Stop affected work on unsafe or uncertain state or unavailable authority/access. Preserve findings, snapshots and STOPPED history; resumed work still requires applicable exact READY and independent result review.

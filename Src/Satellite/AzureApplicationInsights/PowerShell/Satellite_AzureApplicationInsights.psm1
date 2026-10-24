@@ -49,7 +49,7 @@ class Satellite_AzureApplicationInsights {
 
     # ---------------------------------------------------------------------
     # Universal Invoke entry 
-    # Activity uses canonical verb set: ReadBatch, PeekBatch, AckItem, DeferItem, WriteItem
+    # Activities: EmitEntries, EmitSignal, SendMessage, HandleResponse, EmitSignalFull
     # ---------------------------------------------------------------------
     [Signal] Invoke(
         [string]$Slot,
@@ -109,6 +109,15 @@ class Satellite_AzureApplicationInsights {
                     break
                 }
                 { $_ -in @("EmitEntries", "EmitSignal") } {
+                    $handledKey = "TelemetryHandled_$Activity"
+                    if ($null -eq $ItemSignal.GetPointer()) {
+                        $opSignal.LogCritical('Telemetry emission requires an item graph.')
+                        return $opSignal
+                    }
+                    if ($ItemSignal.GetPointer().Grid.Contains($handledKey)) {
+                        $clear = $ItemSignal.GetPointer().UnregisterSignal($handledKey) | Select-Object -Last 1
+                        if ($opSignal.MergeSignalAndVerifyFailure($clear)) { return $opSignal }
+                    }
                     # The App Insights Network Adapter prepares a custom plan to pass to its body. 
                     # Use the plan to run a conduction that will grab the plan from the cache and run it passing through the signal in ItemSignal which will generate the content and send it to App Insights       
 # PlanTokens provide routes to plans held in conductor cache (or elsewhere, example: "EmitEntries":"Memory.Cache.TelemetryPlans.Telemetry.EmitEntries")
@@ -125,7 +134,18 @@ class Satellite_AzureApplicationInsights {
 
                     $clonedCachePlan = $cachedPlanSignal.GetResult() | ConvertTo-Json -Depth 10 | ConvertFrom-Json -Depth 10
                     $conductionSignal = Invoke-CondenserAdapter -Slot "Conduction" -Signal $ConductionSignal -ItemSignal $ItemSignal -Activity "ST" -Plan $clonedCachePlan | Select-Object -Last 1
-                    if ($opSignal.MergeSignalAndVerifyFailure($conductionSignal)) {return $opSignal}
+                    $conductionFailed = $opSignal.MergeSignalAndVerifyFailure($conductionSignal)
+                    $handledSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "*.#.$handledKey.@" | Select-Object -Last 1
+                    if ($handledSignal.HasResult() -and $null -ne $handledSignal.GetResult()) {
+                        $handled = $handledSignal.GetResult()
+                        if ($null -ne $handled.PSObject.Properties['Result'] -and $handled.Result -is [bool]) {
+                            $opSignal.SetResult($handled)
+                        }
+                    }
+                    if (-not $opSignal.HasResult() -and -not $conductionFailed) {
+                        $opSignal.LogCritical("Missing handled telemetry result at $handledKey.")
+                    }
+                    if ($conductionFailed) { return $opSignal }
                     
                     break
                 }
@@ -134,18 +154,53 @@ class Satellite_AzureApplicationInsights {
                      $bodyPathSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Path" | Select-Object -Last 1
 
                     $ContentPlan = [PSCustomObject]@{
-                        Path = $bodyPathSignal.GetResult()
+                        Path = $bodyPathSignal.GetResult()      
 #                                HydrationPlan = "@"
                     }
 
                     $SourceContentResultSignal = Invoke-MappedAdapter -Adapter "Token.Memory"  -Activity "Get" -Plan $ContentPlan -ItemSignal $ItemSignal -Signal $ConductionSignal | Select-Object -Last 1
+                    if ($opSignal.MergeSignalAndVerifyFailure($SourceContentResultSignal) -or -not $SourceContentResultSignal.HasResult()) {
+                        if (-not $opSignal.Failure()) { $opSignal.LogCritical('Telemetry body is missing.') }
+                        return $opSignal
+                    }
+                    $body = $SourceContentResultSignal.GetResult()
+                    if ($body -isnot [string] -or [string]::IsNullOrWhiteSpace($body)) {
+                        $opSignal.LogCritical('Telemetry body must be nonempty JSON text.')
+                        return $opSignal
+                    }
+                    $itemsSent = 0
+                    try {
+                        $json = [System.Text.Json.JsonDocument]::Parse($body)
+                        try {
+                            $root = $json.RootElement
+                            if ($root.ValueKind -eq [System.Text.Json.JsonValueKind]::Object) { $itemsSent = 1 }
+                            elseif ($root.ValueKind -eq [System.Text.Json.JsonValueKind]::Array) {
+                                $itemsSent = $root.GetArrayLength()
+                                foreach ($element in $root.EnumerateArray()) {
+                                    if ($element.ValueKind -ne [System.Text.Json.JsonValueKind]::Object) { throw 'Telemetry array contains a nonobject item.' }
+                                }
+                            }
+                            else { throw 'Telemetry body must be an object or array of objects.' }
+                            if ($itemsSent -le 0) { throw 'Telemetry body contains no items.' }
+                        } finally { $json.Dispose() }
+                    } catch {
+                        $opSignal.LogCritical("Invalid telemetry body: $($_.Exception.Message)")
+                        return $opSignal
+                    }
+                    $countKeySignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.CountKey' | Select-Object -Last 1
+                    if (-not $countKeySignal.HasResult() -or [string]::IsNullOrWhiteSpace([string]$countKeySignal.GetResult()) -or $null -eq $ItemSignal.GetPointer()) {
+                        $opSignal.LogCritical('SendMessage requires Config.CountKey and an item graph.')
+                        return $opSignal
+                    }
+                    $countWrite = $ItemSignal.GetPointer().RegisterResultAsSignal([string]$countKeySignal.GetResult(), $itemsSent) | Select-Object -Last 1
+                    if ($opSignal.MergeSignalAndVerifyFailure($countWrite)) { return $opSignal }
 
                     $uriSignal= Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Addresses" | Select-Object -Last 1
 #                    $resourceSignal= Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Resource" | Select-Object -Last 1
                     
                     $RestPlan = [PSCustomObject]@{
                         Config = [PSCustomObject]@{
-                            Body = $SourceContentResultSignal.GetResult()
+                            Body = $body
                             Method = "Post"
                             SkipBearerToken = $true
                             Uri = $uriSignal.GetResult()
@@ -159,6 +214,72 @@ class Satellite_AzureApplicationInsights {
 
                     $opSignal.SetResult($responseSignal.GetResult())
                     break   
+                }
+                'HandleResponse' {
+                    $rawSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.RawResponse' | Select-Object -Last 1
+                    $sentSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.ItemsSent' | Select-Object -Last 1
+                    $keySignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.HandledResultKey' | Select-Object -Last 1
+                    if (-not $rawSignal.HasResult() -or $null -eq $rawSignal.GetResult() -or
+                        -not $sentSignal.HasResult() -or -not $keySignal.HasResult() -or
+                        [string]::IsNullOrWhiteSpace([string]$keySignal.GetResult()) -or $null -eq $ItemSignal.GetPointer()) {
+                        $opSignal.LogCritical('HandleResponse requires raw response, sent count, result key, and item graph.')
+                        return $opSignal
+                    }
+                    $raw = $rawSignal.GetResult()
+                    if ($raw -is [string]) {
+                        try { $raw = $raw | ConvertFrom-Json -Depth 30 -ErrorAction Stop }
+                        catch { $opSignal.LogCritical('HandleResponse raw response is invalid JSON.'); return $opSignal }
+                    }
+                    if ($raw -isnot [System.Collections.IDictionary] -and $raw -isnot [pscustomobject]) {
+                        $opSignal.LogCritical('HandleResponse raw response must be a property bag.')
+                        return $opSignal
+                    }
+                    if ($raw -is [System.Collections.IDictionary]) { $raw = [pscustomobject]$raw }
+                    $receivedProperty = $raw.PSObject.Properties['itemsReceived']
+                    $acceptedProperty = $raw.PSObject.Properties['itemsAccepted']
+                    $errorsProperty = $raw.PSObject.Properties['errors']
+                    if ($null -eq $receivedProperty -or $null -eq $acceptedProperty) {
+                        $opSignal.LogCritical('HandleResponse receipt lacks required counts.')
+                        return $opSignal
+                    }
+                    $values = @($sentSignal.GetResult(), $receivedProperty.Value, $acceptedProperty.Value)
+                    foreach ($value in $values) {
+                        if ($null -eq $value -or $value.GetType().FullName -notin @(
+                            'System.Byte', 'System.SByte', 'System.Int16', 'System.UInt16',
+                            'System.Int32', 'System.UInt32', 'System.Int64', 'System.UInt64')) {
+                            $opSignal.LogCritical('HandleResponse counts must be whole nonnegative integers.')
+                            return $opSignal
+                        }
+                    }
+                    try {
+                        $itemsSent = [long]$values[0]
+                        $itemsReceived = [long]$values[1]
+                        $itemsAccepted = [long]$values[2]
+                    } catch { $opSignal.LogCritical('HandleResponse count exceeds supported range.'); return $opSignal }
+                    if ($itemsSent -le 0 -or $itemsReceived -lt 0 -or $itemsAccepted -lt 0 -or
+                        $itemsAccepted -gt $itemsReceived -or $itemsReceived -gt $itemsSent -or
+                        ($null -ne $errorsProperty -and $null -ne $errorsProperty.Value -and $errorsProperty.Value -isnot [array])) {
+                        $opSignal.LogCritical('HandleResponse receipt counts or errors are invalid.')
+                        return $opSignal
+                    }
+                    $handled = [pscustomobject]@{
+                        ItemsReceived = $itemsReceived
+                        ItemsAccepted = $itemsAccepted
+                        Result = [bool]($itemsAccepted -eq $itemsSent)
+                    }
+                    $write = $ItemSignal.GetPointer().RegisterResultAsSignal([string]$keySignal.GetResult(), $handled) | Select-Object -Last 1
+                    if ($opSignal.MergeSignalAndVerifyFailure($write)) { return $opSignal }
+                    $opSignal.SetResult($handled)
+                    if ($null -ne $errorsProperty -and $null -ne $errorsProperty.Value) {
+                        $index = 0
+                        foreach ($errorItem in $errorsProperty.Value) {
+                            $code = if ($null -ne $errorItem) { $errorItem.code } else { $null }
+                            $message = if ($null -ne $errorItem) { $errorItem.message } else { $null }
+                            $opSignal.LogCritical("Application Insights error[$index]: code=$code message=$message")
+                            $index++
+                        }
+                    }
+                    break
                 }
 
 

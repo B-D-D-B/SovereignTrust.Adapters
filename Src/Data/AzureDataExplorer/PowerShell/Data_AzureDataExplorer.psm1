@@ -8,6 +8,7 @@ if (-not (Get-Module -Name $sgModuleName)) {
 # Load all files (functions + classes)
 . "$PSScriptRoot/Invoke-Data_AzureDataExplorer.ps1"
 . "$PSScriptRoot/Invoke-AzureDataExplorerAdmin.ps1"
+. "$PSScriptRoot/Invoke-AzureDataExplorerData.ps1"
 
 class Data_AzureDataExplorer {
     [object]$MappedAdapter
@@ -69,11 +70,15 @@ class Data_AzureDataExplorer {
                 return $opSignal
             }
 
-            if ($Activity -eq 'Admin') {
-                $adminSignal = Invoke-AzureDataExplorerAdmin -Adapter $this -Plan $Plan
+            if ($Activity -in @('Admin', 'Query', 'Write', 'Delete')) {
+                $adminSignal = if ($Activity -eq 'Admin') {
+                    Invoke-AzureDataExplorerAdmin -Adapter $this -Plan $Plan
+                } else {
+                    Invoke-AzureDataExplorerData -Adapter $this -Plan $Plan -Activity $Activity
+                }
                 if ($opSignal.MergeSignalAndVerifyFailure($adminSignal)) { return $opSignal }
                 if (-not $adminSignal.HasResult()) {
-                    $opSignal.LogCritical('Admin completed without a result.')
+                    $opSignal.LogCritical("$Activity completed without a result.")
                     return $opSignal
                 }
                 $opSignal.SetResult($adminSignal.GetResult())
