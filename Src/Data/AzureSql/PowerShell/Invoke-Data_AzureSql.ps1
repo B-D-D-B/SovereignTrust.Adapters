@@ -95,14 +95,23 @@ function Invoke-Data_AzureSql {
         }
         $config = Get-AzureSqlObjectValue $Plan 'Config'
         if ($null -eq $config) { throw 'AzureSql requires Plan.Config.' }
+        if ((Test-AzureSqlObjectMember $config 'ExpectedServer') -or
+            (Test-AzureSqlObjectMember $config 'ExpectedDatabase')) {
+            throw 'Azure SQL target overrides are not supported.'
+        }
+        foreach ($name in @('CommandText','Procedure','PayloadParameter','Content','ContentPath','InputFormat','PayloadMode','Delimiter','ColumnSchema','Parameters','CommandTimeoutSeconds','TransactionMode','ExpectResultSets')) {
+            if (Test-AzureSqlObjectMember $config $name) { throw "AzureSql requires Config.Sql.$name." }
+        }
+        $config = Get-AzureSqlObjectValue $config 'Sql'
+        if ($null -eq $config -or $config -is [string]) { throw 'AzureSql requires Plan.Config.Sql.' }
         if ($Activity -eq 'Write') {
             if ([string]::IsNullOrWhiteSpace([string](Get-AzureSqlObjectValue $config 'Procedure'))) {
-                throw 'Write requires Config.Procedure.'
+                throw 'Write requires Config.Sql.Procedure.'
             }
         }
         elseif (($Activity -eq 'Admin' -and (Get-AzureSqlObjectValue $config 'CommandText') -isnot [string]) -or
             [string]::IsNullOrWhiteSpace([string](Get-AzureSqlObjectValue $config 'CommandText'))) {
-            throw "$Activity requires Config.CommandText."
+            throw "$Activity requires Config.Sql.CommandText."
         }
 
         $normalizedWrite = $null

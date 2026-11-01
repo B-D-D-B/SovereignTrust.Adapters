@@ -7,6 +7,12 @@ function Get-ADXAdminField {
     return $field
 }
 
+function Test-ADXAdminFieldPresence {
+    param([object]$Config, [string]$Name)
+    if ($Config -is [System.Collections.IDictionary]) { return $Config.Contains($Name) }
+    return $null -ne $Config.PSObject.Properties[$Name]
+}
+
 function Test-ADXAdminOverride {
     param([object]$Config)
     foreach ($name in @('Uri', 'Url', 'RequestUri', 'Address', 'Addresses', 'Host', 'Bearer', 'BearerToken', 'AccessToken', 'Token', 'Authorization', 'Database', 'Db', 'Method', 'HttpMethod', 'ExpectedClusterUri', 'ExpectedDatabase')) {
@@ -21,6 +27,9 @@ function Test-ADXAdminOverride {
 function Resolve-ADXAdminInput {
     param([object]$Adapter, [object]$Plan)
     $config = Get-ADXAdminField $Plan 'Config'
+    if ($null -eq $config -or $config -is [string] -or (Test-ADXAdminOverride $config)) { throw 'InvalidConfig' }
+    if (Test-ADXAdminFieldPresence $config 'CommandText') { throw 'InvalidConfig' }
+    $config = Get-ADXAdminField $config 'ADX'
     if ($null -eq $config -or $config -is [string] -or (Test-ADXAdminOverride $config)) { throw 'InvalidConfig' }
     $command = Get-ADXAdminField $config 'CommandText'
     if ($command -isnot [string] -or [string]::IsNullOrWhiteSpace($command) -or -not $command.TrimStart().StartsWith('.')) { throw 'InvalidCommand' }

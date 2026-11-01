@@ -21,7 +21,7 @@ $conduction = [Signal]::Start('AzureSqlNormalization.Conduction') | Select-Objec
 $item = [Signal]::Start('AzureSqlNormalization.Item') | Select-Object -Last 1
 
 function Invoke-Case([object]$Config, [bool]$ShouldFail = $false) {
-    $plan = [pscustomobject]@{ Config = $Config }
+    $plan = [pscustomobject]@{ Config = @{ Sql = $Config } }
     $before = ConvertTo-Json -InputObject $plan -Depth 100 -Compress
     $result = $adapter.Invoke('FusionDatabase', 'Write', $conduction, $plan, $item)
     Assert ($result.Failure() -eq $ShouldFail) "Unexpected Write outcome for $before : $($result.GetEntries() | Out-String)"
@@ -124,7 +124,7 @@ function Check-Regression([bool]$Condition, [string]$Message) {
     if (-not $Condition) { $regressions.Add($Message) }
 }
 function Invoke-Regression([object]$Config) {
-    $plan = [pscustomobject]@{ Config = $Config }
+    $plan = [pscustomobject]@{ Config = @{ Sql = $Config } }
     $before = ConvertTo-Json -InputObject $plan -Depth 100 -Compress
     $result = $adapter.Invoke('FusionDatabase', 'Write', $conduction, $plan, $item)
     Check-Regression ((ConvertTo-Json -InputObject $plan -Depth 100 -Compress) -ceq $before) 'Regression case mutated caller plan.'

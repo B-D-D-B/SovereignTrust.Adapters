@@ -30,24 +30,24 @@ $examples = @($blocks | ForEach-Object { $_.Groups[1].Value | ConvertFrom-Json -
 for ($index = 0; $index -lt 5; $index++) {
     Assert ($examples[$index].Adapter -ceq 'Data.FusionDatabase') "Example $index does not use the direct mapped route."
 }
-Assert ($examples[0].Config.InputFormat -ceq 'Json' -and $examples[0].Config.PayloadMode -ceq 'Records') 'JSON records example is inconsistent.'
-Assert ($examples[1].Config.InputFormat -ceq 'Csv' -and $examples[1].Config.PayloadMode -ceq 'Records') 'CSV records example is inconsistent.'
-Assert ($examples[2].Config.InputFormat -ceq 'Object' -and $examples[2].Config.PayloadMode -ceq 'Document' -and $examples[2].Config.Content.Metadata.Name -ceq 'Example' -and $examples[2].Config.Content.Items.Count -eq 1) 'Nested document example is inconsistent.'
+Assert ($examples[0].Config.Sql.InputFormat -ceq 'Json' -and $examples[0].Config.Sql.PayloadMode -ceq 'Records') 'JSON records example is inconsistent.'
+Assert ($examples[1].Config.Sql.InputFormat -ceq 'Csv' -and $examples[1].Config.Sql.PayloadMode -ceq 'Records') 'CSV records example is inconsistent.'
+Assert ($examples[2].Config.Sql.InputFormat -ceq 'Object' -and $examples[2].Config.Sql.PayloadMode -ceq 'Document' -and $examples[2].Config.Sql.Content.Metadata.Name -ceq 'Example' -and $examples[2].Config.Sql.Content.Items.Count -eq 1) 'Nested document example is inconsistent.'
 Assert ($examples[3].Activity -ceq 'Query' -and $examples[4].Activity -ceq 'Delete') 'Query/Delete examples are missing.'
 Assert ($examples[5].Operation -ceq 'Query' -and $examples[5].ResultSets[0].Columns.Count -eq 1) 'Result envelope example is inconsistent.'
 Assert ($examples[6].Adapter -ceq 'Data.AdminDatabase' -and $examples[6].Activity -ceq 'Admin' -and
-    $examples[6].Config.TransactionMode -ceq 'Required' -and
+    $examples[6].Config.Sql.TransactionMode -ceq 'Required' -and
     -not $examples[6].Config.Contains('ExpectedServer') -and
     -not $examples[6].Config.Contains('ExpectedDatabase') -and
-    $examples[6].Config.CommandText -ceq 'CREATE TABLE [reviewed_schema].[reviewed_object] ([Id] int NOT NULL)') 'Admin documentation example is inconsistent.'
-$records = $examples[0].Config.Content | ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100
+    $examples[6].Config.Sql.CommandText -ceq 'CREATE TABLE [reviewed_schema].[reviewed_object] ([Id] int NOT NULL)') 'Admin documentation example is inconsistent.'
+$records = $examples[0].Config.Sql.Content | ConvertFrom-Json -AsHashtable -NoEnumerate -Depth 100
 Assert ($records.Count -eq 1 -and $records[0].Id -eq 1) 'JSON record Content does not parse as a record array.'
-$csv = @($examples[1].Config.Content | ConvertFrom-Csv)
+$csv = @($examples[1].Config.Sql.Content | ConvertFrom-Csv)
 Assert ($csv.Count -eq 1 -and $csv[0].Id -eq '2' -and $csv[0].Name -ceq 'Example, Gallery') 'CSV record Content does not parse as documented.'
 foreach ($index in @(3, 4)) {
     $operation = $examples[$index]
-    Assert ($operation.Config.Parameters.Count -eq 1 -and $operation.Config.Parameters[0].Name -ceq '@Id' -and $operation.Config.Parameters[0].SqlDbType -ceq 'Int') "Example $index is missing its typed parameter."
-    Assert ($operation.Config.CommandText.Contains('@Id') -and $operation.Config.CommandTimeoutSeconds -eq 15) "Example $index has inconsistent text or timeout."
+    Assert ($operation.Config.Sql.Parameters.Count -eq 1 -and $operation.Config.Sql.Parameters[0].Name -ceq '@Id' -and $operation.Config.Sql.Parameters[0].SqlDbType -ceq 'Int') "Example $index is missing its typed parameter."
+    Assert ($operation.Config.Sql.CommandText.Contains('@Id') -and $operation.Config.Sql.CommandTimeoutSeconds -eq 15) "Example $index has inconsistent text or timeout."
 }
 
 $planPath = Join-Path $PSScriptRoot '../../../../docs/AzureSql-Data-Adapter-Implementation-Plan.md'
@@ -56,8 +56,8 @@ $planExample = [regex]::Match($planText, '(?ms)^## 10\. Update plans and example
 Assert ($planExample.Success) 'Implementation plan JSON example is missing.'
 $illustration = $planExample.Groups[1].Value | ConvertFrom-Json -AsHashtable -Depth 100
 Assert ($illustration.Adapter -ceq 'Data.FusionDatabase' -and
-    $illustration.Config.Procedure -ceq 'example.usp_IngestRecords' -and
-    $illustration.Config.InputFormat -ceq 'Object') 'Implementation plan JSON example is inconsistent.'
+    $illustration.Config.Sql.Procedure -ceq 'example.usp_IngestRecords' -and
+    $illustration.Config.Sql.InputFormat -ceq 'Object') 'Implementation plan JSON example is inconsistent.'
 Assert ($planText.Contains('Replace its schema and procedure name with a reviewed procedure')) 'Implementation plan does not mark its procedure as illustrative.'
 
 Write-Output 'PASS: configuration parses, sdadev01 mapping is unique and exact, and active JSON examples parse and route directly.'

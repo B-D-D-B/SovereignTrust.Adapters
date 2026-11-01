@@ -2,7 +2,7 @@ function Invoke-AzureSqlQuery {
     param([object]$Session, [object]$Adapter, [object]$Config)
     $text = Get-AzureSqlObjectValue $Config 'CommandText'
     if ($text -isnot [string] -or [string]::IsNullOrWhiteSpace($text)) {
-        throw 'Query requires Config.CommandText.'
+        throw 'Query requires Config.Sql.CommandText.'
     }
     $command = New-AzureSqlCommand -Session $Session -Adapter $Adapter -Config $Config `
         -CommandType Text -CommandText $text

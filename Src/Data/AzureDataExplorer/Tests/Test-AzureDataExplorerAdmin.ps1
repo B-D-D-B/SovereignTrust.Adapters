@@ -1,4 +1,4 @@
-using module ../../../../../SignalGraph/Src/PowerShell/SignalGraph/SignalGraph.psd1
+using module SignalGraph
 
 $ErrorActionPreference = 'Stop'
 $adapterRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).ProviderPath
@@ -52,21 +52,31 @@ $constructed = $adapter.Construct($jacket.GetResult())
 Assert-Case 'construct' ($constructed.Success() -and $null -ne $adapter.Signal)
 $conduction = [Signal]::Start('test.conduction') | Select-Object -Last 1
 $item = [Signal]::Start('test.item') | Select-Object -Last 1
-$good = @{ Config=@{ CommandText='.show tables' } }
+$good = @{ Config=@{ ADX=@{ CommandText='.show tables' } } }
 $signal = $adapter.Invoke('AdminFixture','Admin',$conduction,$good,$item)
 Assert-Case 'admin result' ($signal.Success() -and $signal.HasResult() -and (($signal.GetResult() | ConvertFrom-Json).Operation -eq 'Admin'))
 Assert-Case 'one management request' ((& $module { $script:TestCalls }) -eq 1 -and (& $module { $script:LastRequest.Uri }) -eq 'https://free-test.westus3.kusto.windows.net/v1/rest/mgmt')
 $before = & $module { @($script:TestCalls,$script:TokenCalls) }
-$bad = @{ Config=@{ CommandText='print 1' } }
+$bad = @{ Config=@{ ADX=@{ CommandText='print 1' } } }
 $signal = $adapter.Invoke('AdminFixture','Admin',$conduction,$bad,$item)
 Assert-Case 'query rejected before token' (-not $signal.Success() -and -not $signal.HasResult() -and (& $module { $script:TestCalls }) -eq $before[0] -and (& $module { $script:TokenCalls }) -eq $before[1])
-$bad.Config.CommandText = '.show tables'; $bad.Config.Uri = 'https://other.kusto.windows.net/v1/rest/mgmt'
+$bad.Config.ADX.CommandText = '.show tables'; $bad.Config.Uri = 'https://other.kusto.windows.net/v1/rest/mgmt'
 $signal = $adapter.Invoke('AdminFixture','Admin',$conduction,$bad,$item)
 Assert-Case 'override rejected' (-not $signal.Success() -and (& $module { $script:TestCalls }) -eq $before[0])
 $bad.Config.Remove('Uri'); $bad.Config.BearerToken = 'caller-supplied'
 $signal = $adapter.Invoke('AdminFixture','Admin',$conduction,$bad,$item)
 Assert-Case 'bearer override rejected' (-not $signal.Success() -and (& $module { $script:TokenCalls }) -eq $before[1])
 $bad.Config.Remove('BearerToken')
+$beforeCalls = & $module { @($script:TokenCalls,$script:TestCalls) }
+foreach ($config in @(
+    @{ CommandText='.show tables' },
+    @{ ADX=@{ CommandText='.show tables'; Uri='https://other.kusto.windows.net' } },
+    @{ ADX=@{ CommandText='.show tables' }; CommandText='.show databases' }
+)) {
+    $result = $adapter.Invoke('AdminFixture','Admin',$conduction,@{ Config=$config },$item)
+    Assert-Case 'flat command or nested override rejected before token' (-not $result.Success() -and -not $result.HasResult() -and
+        (& $module { $script:TokenCalls }) -eq $beforeCalls[0] -and (& $module { $script:TestCalls }) -eq $beforeCalls[1])
+}
 $invalidCommands = @(
     @{ Name='missing command'; Value=$null; Remove=$true },
     @{ Name='nonstring command'; Value=7 },
@@ -74,8 +84,8 @@ $invalidCommands = @(
     @{ Name='query command'; Value='print 1' }
 )
 foreach ($case in $invalidCommands) {
-    $casePlan = @{ Config=@{} }
-    if (-not ($case.ContainsKey('Remove') -and $case['Remove'])) { $casePlan.Config.CommandText = $case.Value }
+    $casePlan = @{ Config=@{ ADX=@{} } }
+    if (-not ($case.ContainsKey('Remove') -and $case['Remove'])) { $casePlan.Config.ADX.CommandText = $case.Value }
     $beforeCalls = & $module { @($script:TokenCalls,$script:TestCalls) }
     $result = $adapter.Invoke('AdminFixture','Admin',$conduction,$casePlan,$item)
     Assert-Case $case.Name (-not $result.Success() -and -not $result.HasResult() -and
@@ -98,7 +108,7 @@ foreach ($case in $invalidTargets) {
         (& $module { $script:TokenCalls }) -eq $beforeCalls[0] -and (& $module { $script:TestCalls }) -eq $beforeCalls[1])
 }
 foreach ($name in @('ExpectedClusterUri','ExpectedDatabase')) {
-    $override = @{ Config=@{ CommandText='.show tables' } }
+    $override = @{ Config=@{ ADX=@{ CommandText='.show tables' } } }
     $override.Config[$name] = $null
     $beforeCalls = & $module { @($script:TokenCalls,$script:TestCalls) }
     $result = $adapter.Invoke('AdminFixture','Admin',$conduction,$override,$item)

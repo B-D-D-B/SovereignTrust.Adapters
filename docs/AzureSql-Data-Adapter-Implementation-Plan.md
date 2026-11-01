@@ -337,23 +337,25 @@ Write plans route directly through the mapped data slot:
 
 ```json
 {
-    "Name": "IngestRecords",
-    "Adapter": "Data.FusionDatabase",
-    "Activity": "Write",
-    "Key": "IngestResult",
-    "Config": {
-        "InputFormat": "Object",
-        "PayloadMode": "Records",
-        "Content": [
-            {
-                "Id": 1,
-                "Name": "Museum"
-            }
-        ],
-        "Procedure": "example.usp_IngestRecords",
-        "PayloadParameter": "@Payload",
-        "Parameters": []
+  "Name": "IngestRecords",
+  "Adapter": "Data.FusionDatabase",
+  "Activity": "Write",
+  "Key": "IngestResult",
+  "Config": {
+    "Sql": {
+      "InputFormat": "Object",
+      "PayloadMode": "Records",
+      "Content": [
+        {
+          "Id": 1,
+          "Name": "Museum"
+        }
+      ],
+      "Procedure": "example.usp_IngestRecords",
+      "PayloadParameter": "@Payload",
+      "Parameters": []
     }
+  }
 }
 ```
 

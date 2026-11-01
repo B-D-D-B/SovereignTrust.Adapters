@@ -102,9 +102,9 @@ $adapterModule = Get-Module Data_AzureSql
 }
 $itemSignal = [Signal]::Start('AzureSqlHydration.Item') | Select-Object -Last 1
 $itemSignal.SetPointer($conductor.Signal.GetPointer()) | Out-Null
-$plan = [PSCustomObject]@{ Adapter = 'Data.FusionDatabase'; Activity = 'Query'; Config = [PSCustomObject]@{
+$plan = [PSCustomObject]@{ Adapter = 'Data.FusionDatabase'; Activity = 'Query'; Config = [PSCustomObject]@{ Sql = [PSCustomObject]@{
     CommandText = 'SELECT 1'; Parameters = @()
-} }
+} } }
 $routed = Invoke-MappedAdapter -Adapter $plan.Adapter -Activity $plan.Activity `
     -Signal $runSignal -Plan $plan -ItemSignal $itemSignal | Select-Object -Last 1
 Assert (-not $routed.Failure() -and $routed.HasResult()) 'Registered FusionDatabase slot did not route.'

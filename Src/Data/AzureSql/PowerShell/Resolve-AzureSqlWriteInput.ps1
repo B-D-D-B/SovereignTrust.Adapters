@@ -71,12 +71,12 @@ function Resolve-AzureSqlWriteInput {
     param([object]$Config, [Signal]$ItemSignal, [Signal]$OperationSignal)
     $hasContent = Test-AzureSqlObjectMember $Config 'Content'
     $hasPath = Test-AzureSqlObjectMember $Config 'ContentPath'
-    if ($hasContent -eq $hasPath) { throw 'Write requires exactly one of Config.Content or Config.ContentPath.' }
+    if ($hasContent -eq $hasPath) { throw 'Write requires exactly one of Config.Sql.Content or Config.Sql.ContentPath.' }
 
     if ($hasPath) {
         $path = Get-AzureSqlWriteMember $Config 'ContentPath'
         if ($path -isnot [string] -or [string]::IsNullOrWhiteSpace($path)) {
-            throw 'Config.ContentPath must be a nonblank signal path.'
+            throw 'Config.Sql.ContentPath must be a nonblank signal path.'
         }
         $resolution = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path $path | Select-Object -Last 1
         if ($resolution -isnot [Signal]) { throw 'ContentPath resolution returned no signal.' }

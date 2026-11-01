@@ -2,6 +2,9 @@ function Resolve-ADXDataInput {
     param([object]$Adapter, [object]$Plan, [string]$Activity)
     $config = Get-ADXAdminField $Plan 'Config'
     if ($null -eq $config -or $config -is [string] -or (Test-ADXAdminOverride $config)) { throw 'InvalidConfig' }
+    if (Test-ADXAdminFieldPresence $config 'CommandText') { throw 'InvalidConfig' }
+    $config = Get-ADXAdminField $config 'ADX'
+    if ($null -eq $config -or $config -is [string] -or (Test-ADXAdminOverride $config)) { throw 'InvalidConfig' }
     $command = Get-ADXAdminField $config 'CommandText'
     if ($command -isnot [string] -or [string]::IsNullOrWhiteSpace($command) -or $command.Length -gt 16384) { throw 'InvalidCommand' }
     $command = $command.Trim()
@@ -19,7 +22,7 @@ function Resolve-ADXDataInput {
         default { throw 'InvalidActivity' }
     }
     # Reuse the accepted target and override validation without changing Admin's contract.
-    $targetInput = Resolve-ADXAdminInput -Adapter $Adapter -Plan @{ Config = @{ CommandText = '.show tables' } }
+    $targetInput = Resolve-ADXAdminInput -Adapter $Adapter -Plan @{ Config = @{ ADX = @{ CommandText = '.show tables' } } }
     $uri = $targetInput.Uri
     if ($Activity -eq 'Query') { $uri = $uri.Replace('/v1/rest/mgmt', '/v1/rest/query') }
     return [pscustomobject]@{ Uri = $uri; Database = $targetInput.Database; Command = $command }

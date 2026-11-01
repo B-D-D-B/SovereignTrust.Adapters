@@ -10,13 +10,21 @@ JSON records supplied as text (the adapter also accepts an already structured ob
 
 ```json
 {
-  "Adapter": "Data.FusionDatabase", "Activity": "Write",
+  "Adapter": "Data.FusionDatabase",
+  "Activity": "Write",
   "Config": {
-    "Procedure": "example.usp_IngestRecords", "PayloadParameter": "@Payload",
-    "InputFormat": "Json", "PayloadMode": "Records",
-    "Content": "[{\"Id\":1,\"Name\":\"Example\"}]",
-    "ColumnSchema": { "Id": "int" }, "CommandTimeoutSeconds": 45,
-    "Parameters": []
+    "Sql": {
+      "Procedure": "example.usp_IngestRecords",
+      "PayloadParameter": "@Payload",
+      "InputFormat": "Json",
+      "PayloadMode": "Records",
+      "Content": "[{\"Id\":1,\"Name\":\"Example\"}]",
+      "ColumnSchema": {
+        "Id": "int"
+      },
+      "CommandTimeoutSeconds": 45,
+      "Parameters": []
+    }
   }
 }
 ```
@@ -25,12 +33,19 @@ CSV records use `PayloadMode: "Records"`; a one-character `Delimiter` may be sup
 
 ```json
 {
-  "Adapter": "Data.FusionDatabase", "Activity": "Write",
+  "Adapter": "Data.FusionDatabase",
+  "Activity": "Write",
   "Config": {
-    "Procedure": "example.usp_IngestRecords",
-    "InputFormat": "Csv", "PayloadMode": "Records",
-    "Content": "Id,Name\n2,\"Example, Gallery\"",
-    "ColumnSchema": { "Id": "int" }, "CommandTimeoutSeconds": 45
+    "Sql": {
+      "Procedure": "example.usp_IngestRecords",
+      "InputFormat": "Csv",
+      "PayloadMode": "Records",
+      "Content": "Id,Name\n2,\"Example, Gallery\"",
+      "ColumnSchema": {
+        "Id": "int"
+      },
+      "CommandTimeoutSeconds": 45
+    }
   }
 }
 ```
@@ -39,13 +54,26 @@ Nested document input uses `Document` mode. The example passes a structured obje
 
 ```json
 {
-  "Adapter": "Data.FusionDatabase", "Activity": "Write",
+  "Adapter": "Data.FusionDatabase",
+  "Activity": "Write",
   "Config": {
-    "Procedure": "example.usp_IngestDocument",
-    "InputFormat": "Object", "PayloadMode": "Document",
-    "Content": { "Metadata": { "Name": "Example", "Version": 1 },
-      "Items": [{ "Id": 1 }] },
-    "CommandTimeoutSeconds": 60
+    "Sql": {
+      "Procedure": "example.usp_IngestDocument",
+      "InputFormat": "Object",
+      "PayloadMode": "Document",
+      "Content": {
+        "Metadata": {
+          "Name": "Example",
+          "Version": 1
+        },
+        "Items": [
+          {
+            "Id": 1
+          }
+        ]
+      },
+      "CommandTimeoutSeconds": 60
+    }
   }
 }
 ```
@@ -54,22 +82,40 @@ Query and Delete use separate typed parameters; the adapter never substitutes va
 
 ```json
 {
-  "Adapter": "Data.FusionDatabase", "Activity": "Query",
+  "Adapter": "Data.FusionDatabase",
+  "Activity": "Query",
   "Config": {
-    "CommandText": "SELECT Id, Name FROM example.Records WHERE Id = @Id",
-    "Parameters": [{ "Name": "@Id", "SqlDbType": "Int", "Value": 1 }],
-    "CommandTimeoutSeconds": 15
+    "Sql": {
+      "CommandText": "SELECT Id, Name FROM example.Records WHERE Id = @Id",
+      "Parameters": [
+        {
+          "Name": "@Id",
+          "SqlDbType": "Int",
+          "Value": 1
+        }
+      ],
+      "CommandTimeoutSeconds": 15
+    }
   }
 }
 ```
 
 ```json
 {
-  "Adapter": "Data.FusionDatabase", "Activity": "Delete",
+  "Adapter": "Data.FusionDatabase",
+  "Activity": "Delete",
   "Config": {
-    "CommandText": "DELETE FROM example.Records WHERE Id = @Id",
-    "Parameters": [{ "Name": "@Id", "SqlDbType": "Int", "Value": 1 }],
-    "CommandTimeoutSeconds": 15
+    "Sql": {
+      "CommandText": "DELETE FROM example.Records WHERE Id = @Id",
+      "Parameters": [
+        {
+          "Name": "@Id",
+          "SqlDbType": "Int",
+          "Value": 1
+        }
+      ],
+      "CommandTimeoutSeconds": 15
+    }
   }
 }
 ```
@@ -88,7 +134,7 @@ Successful calls return JSON text through `Signal.SetResult()`. This envelope il
 }
 ```
 
-Write, Delete, and Admin use adapter-managed transactions by default. A reviewed Write stored procedure or Admin statement that cannot participate in one may set `"TransactionMode": "None"` in `Config`; the caller then owns atomicity and recovery. Query and Delete do not accept that override.
+Write, Delete, and Admin use adapter-managed transactions by default. A reviewed Write stored procedure or Admin statement that cannot participate in one may set `"TransactionMode": "None"` in `Config.Sql`; the caller then owns atomicity and recovery. Query and Delete do not accept that override.
 
 The provisional in-memory implementation and `Condenser.Data` route have been removed. The adapter retains its constructed jacket. Secure connection construction, typed SQL parameter creation, and Write, Query, Delete, and Admin command execution are implemented.
 
@@ -127,13 +173,13 @@ From the repository root, run `pwsh -NoProfile -File Src/Data/AzureSql/Package-A
 
 ## Internal execution boundary
 
-`Data_AzureSql.Invoke` performs activity and `Plan.Config` validation and Write normalization, then calls the private `Invoke-AzureSqlExecution` orchestrator. That function creates one session via private `New-AzureSqlSession`, dispatches to `Invoke-AzureSqlWrite`, `Invoke-AzureSqlQuery`, `Invoke-AzureSqlDelete`, or `Invoke-AzureSqlAdmin`, and disposes the session in `finally`. The production factory parses the hydrated jacket `Resource` with `SqlConnectionStringBuilder`, opens a new `SqlConnection`, and disposes it on open failure. Each operation disposes its command. Reader operations traverse and dispose the reader before reading output parameters.
+`Data_AzureSql.Invoke` performs activity and `Plan.Config.Sql` validation and Write normalization, then calls the private `Invoke-AzureSqlExecution` orchestrator. That function creates one session via private `New-AzureSqlSession`, dispatches to `Invoke-AzureSqlWrite`, `Invoke-AzureSqlQuery`, `Invoke-AzureSqlDelete`, or `Invoke-AzureSqlAdmin`, and disposes the session in `finally`. The production factory parses the hydrated jacket `Resource` with `SqlConnectionStringBuilder`, opens a new `SqlConnection`, and disposes it on open failure. Each operation disposes its command. Reader operations traverse and dispose the reader before reading output parameters.
 
 Tests replace `New-AzureSqlSession` **inside module scope** with a connection double. The connection double provides `CreateCommand` and `Dispose`; its command double provides a parameter collection, `ExecuteReader`, `ExecuteNonQuery`, and `Dispose`; reader doubles provide `Read`, `NextResult`, schema/column/value access, and `Dispose`. `Data_AzureSql.ExecutionBoundary.Tests.ps1` exercises the real Write, Query, Delete, and Admin helpers through this factory. No factory or double is exported or accepted through adapter configuration.
 
 ## Write input contract
 
-`Plan.Config` requires a nonblank `Procedure` and exactly one **present member** of `Content` or `ContentPath`. Null `Content` still counts as present, so pairing it with `ContentPath` is ambiguous. `ContentPath` is a nonblank path resolved against `ItemSignal` with `Resolve-PathFromDictionary`, such as `@.Payload`; it does not refer to a file. Missing paths and resolver failures produce a failed signal.
+`Plan.Config.Sql` requires a nonblank `Procedure` and exactly one **present member** of `Content` or `ContentPath`. Null `Content` still counts as present, so pairing it with `ContentPath` is ambiguous. `ContentPath` is a nonblank path resolved against `ItemSignal` with `Resolve-PathFromDictionary`, such as `@.Payload`; it does not refer to a file. Missing paths and resolver failures produce a failed signal.
 
 `InputFormat` defaults to `Object` and accepts `Object`, `Json`, or `Csv`. Object uses the selected value directly. Json parses string content as JSON and accepts already structured values. Csv requires text and uses `ConvertFrom-Csv`, retaining quoted fields, empty fields, and embedded newlines. `Delimiter` defaults to comma and, if specified, must be a single character.
 
@@ -141,27 +187,31 @@ Tests replace `New-AzureSqlSession` **inside module scope** with a connection do
 
 Records may specify `ColumnSchema` as a dictionary (`@{ Id = 'int' }`) or Name/Type descriptors (`@(@{ Name = 'Id'; Type = 'int' })`). Matching columns are converted on fresh payload rows; unlisted columns and null values are retained. Supported names are `string/nvarchar/varchar/text` (string), `int/int32` (Int32), `long/int64/bigint` (Int64), `decimal/numeric` (Decimal), `double/float` (Double), `bool/boolean/bit` (Boolean, including `0` and `1`), and `date/datetime/datetime2/datetimeoffset` (DateTimeOffset). Numeric and date parsing uses invariant culture. Unsupported types and failed conversions produce a failed signal.
 
-Normalization keeps JSON and format information local to the invocation. It neither rewrites nor clones the caller plan, and it does not serialize or coerce unrelated `Config.Parameters` values. Write binds this local JSON as `NVarChar(MAX)` to `Config.PayloadParameter` or `@Payload`.
+Normalization keeps JSON and format information local to the invocation. It neither rewrites nor clones the caller plan, and it does not serialize or coerce unrelated `Config.Sql.Parameters` values. Write binds this local JSON as `NVarChar(MAX)` to `Config.Sql.PayloadParameter` or `@Payload`.
 
 ## Operation execution
 
-Write calls `Config.Procedure` as a stored procedure. Query and Delete use `Config.CommandText` as text with separate typed parameters. Reader operations preserve each result set, including empty sets and schema metadata, and capture output and return-value parameters after closing the reader. Delete uses `ExecuteNonQuery` unless `Config.ExpectResultSets` is true. Provider affected count `-1` is serialized as JSON null; zero remains zero. `Config.CommandTimeoutSeconds` overrides the jacket-level value, with a 30-second default. Values must be integral seconds from 1 through 86400. Write and Delete are each executed once, without automatic retry.
+Write calls `Config.Sql.Procedure` as a stored procedure. Query and Delete use `Config.Sql.CommandText` as text with separate typed parameters. Reader operations preserve each result set, including empty sets and schema metadata, and capture output and return-value parameters after closing the reader. Delete uses `ExecuteNonQuery` unless `Config.Sql.ExpectResultSets` is true. Provider affected count `-1` is serialized as JSON null; zero remains zero. `Config.Sql.CommandTimeoutSeconds` overrides the jacket-level value, with a 30-second default. Values must be integral seconds from 1 through 86400. Write and Delete are each executed once, without automatic retry.
 
 Reader results assign one JSON key to each column by ordinal, even when SQL returns duplicate or unnamed columns. `Columns[].SourceName` contains the exact provider name; `Columns[].Name` and row keys contain the assigned JSON name. The first nonblank occurrence keeps its source name. Matching is case insensitive, while the original case is retained: `Id`, `Id` becomes `Id`, `Id_2`; `Id`, `id` becomes `Id`, `id_2`. Blank or whitespace-only names use `Column` plus the one-based ordinal, such as `Column1`. Generated names append `_2`, `_3`, and so on until unique. All nonblank source names are reserved before assignment, so `Id`, `Id`, `Id_2` becomes `Id`, `Id_3`, `Id_2`, and an unnamed first column followed by source `Column1` becomes `Column1_2`, `Column1`. The mapping is computed separately for each result set and is the same whether or not it contains rows. Ordinal, type, nullability, precision, and scale metadata remain with each column.
 
 Write and Delete open one connection and enlist their command in an explicit transaction by default. The adapter closes readers, captures output and return parameters, serializes and validates the complete JSON envelope, and only then commits. Execution, conversion, serialization, and precommit cleanup failures attempt rollback. A failed commit has an uncertain outcome; its failed signal says so, even if rollback also fails. A cleanup failure after a successful commit produces a failed signal that explicitly says the operation committed. Provider exception details and parameter values are never copied into those signals. Query opens a connection without an explicit transaction.
 
-Only a reviewed Write stored procedure or Admin statement that cannot participate in an adapter-managed transaction may set `Config.TransactionMode` to `None`. This is an explicit opt-out of rollback guarantees; the caller owns atomicity and reconciliation of uncertain or autocommit outcomes. Omit the property for the transactional default. `None` is rejected for Delete and any `TransactionMode` setting is rejected for Query. Transaction support is statement-specific; Admin does not claim that all DDL is transactional. Admin is never retried automatically.
+Only a reviewed Write stored procedure or Admin statement that cannot participate in an adapter-managed transaction may set `Config.Sql.TransactionMode` to `None`. This is an explicit opt-out of rollback guarantees; the caller owns atomicity and reconciliation of uncertain or autocommit outcomes. Omit the property for the transactional default. `None` is rejected for Delete and any `TransactionMode` setting is rejected for Query. Transaction support is statement-specific; Admin does not claim that all DDL is transactional. Admin is never retried automatically.
 
 ### Admin activity
 
-Admin accepts a reviewed, nonblank `Config.CommandText` as one T-SQL batch on a mapped `Data.<slot>` jacket. It submits the text once through `ExecuteNonQuery`, with the existing typed parameters and timeout. The registered jacket supplies the target; the executing session must match its server and database. Step-level target fields are rejected. The caller must select a bounded target and hold the needed permissions under the existing identity. The mapped Admin slot routes intent; it is not a separate login or privilege boundary. This inert example names placeholders and is not a deployment script:
+Admin accepts a reviewed, nonblank `Config.Sql.CommandText` as one T-SQL batch on a mapped `Data.<slot>` jacket. It submits the text once through `ExecuteNonQuery`, with the existing typed parameters and timeout. The registered jacket supplies the target; the executing session must match its server and database. Step-level target fields are rejected. The caller must select a bounded target and hold the needed permissions under the existing identity. The mapped Admin slot routes intent; it is not a separate login or privilege boundary. This inert example names placeholders and is not a deployment script:
 
 ```json
 {
-  "Adapter": "Data.AdminDatabase", "Activity": "Admin",
+  "Adapter": "Data.AdminDatabase",
+  "Activity": "Admin",
   "Config": {
-    "TransactionMode": "Required", "CommandText": "CREATE TABLE [reviewed_schema].[reviewed_object] ([Id] int NOT NULL)"
+    "Sql": {
+      "TransactionMode": "Required",
+      "CommandText": "CREATE TABLE [reviewed_schema].[reviewed_object] ([Id] int NOT NULL)"
+    }
   }
 }
 ```
@@ -182,6 +232,6 @@ The adapter rejects `Encrypt=False`/`Optional`, `Trust Server Certificate=True`,
 
 ## Parameter contract
 
-`Plan.Config.Parameters` canonically contains descriptors with `Name` (an `@`-prefixed identifier), `SqlDbType`, optional `Size`, `Precision`, `Scale`, `Direction`, and `Value`. `Direction` defaults to `Input`; supported directions are `Input`, `Output`, `InputOutput`, and `ReturnValue`. Input and input/output require a present `Value`; explicit null becomes `DBNull.Value`. Character and binary output parameters require `Size`. `Size=-1` is limited to `NVarChar`, `VarChar`, and `VarBinary`. `Structured`, `Udt`, and `Variant` types are unsupported. Binary descriptors accept a `byte[]` or base64 text; other supported types use invariant scalar conversions. Conversion failures reject the descriptor without publishing the value.
+`Plan.Config.Sql.Parameters` canonically contains descriptors with `Name` (an `@`-prefixed identifier), `SqlDbType`, optional `Size`, `Precision`, `Scale`, `Direction`, and `Value`. `Direction` defaults to `Input`; supported directions are `Input`, `Output`, `InputOutput`, and `ReturnValue`. Input and input/output require a present `Value`; explicit null becomes `DBNull.Value`. Character and binary output parameters require `Size`. `Size=-1` is limited to `NVarChar`, `VarChar`, and `VarBinary`. `Structured`, `Udt`, and `Variant` types are unsupported. Binary descriptors accept a `byte[]` or base64 text; other supported types use invariant scalar conversions. Conversion failures reject the descriptor without publishing the value.
 
 A dictionary such as `@{ '@Id' = 1 }` remains as a compatibility input. It infers types only from supported nonnull .NET scalar values (string, Boolean, byte, Int16/32/64, Decimal, Single/Double, Guid, DateTime/DateTimeOffset, TimeSpan, and byte array). Nulls, objects, arrays other than `byte[]`, output directions, and explicit database metadata require descriptors. Inferred string size and decimal precision/scale are left to SqlClient, so use descriptors when those details matter. The helper creates `SqlParameter` objects and adds them to a command; it never interpolates values into command text or procedure names.

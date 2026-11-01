@@ -207,7 +207,7 @@ $module = Get-Module Data_AzureSql
 }
 function Invoke-Case([string]$activity, [object]$config, [object]$session) {
     & $module { $script:TestSessions.Enqueue($args[0]) } $session
-    $plan = [pscustomobject]@{ Config = $config }
+    $plan = [pscustomobject]@{ Config = @{ Sql = $config } }
     $before = ConvertTo-Json -InputObject $plan -Depth 100 -Compress
     $result = $adapter.Invoke('FusionDatabase', $activity, $conduction, $plan, $item)
     Assert ((ConvertTo-Json -InputObject $plan -Depth 100 -Compress) -ceq $before) 'Invocation mutated Plan.Config.'
@@ -598,7 +598,7 @@ $optOutSession = New-TestCase @($empty)
 $optOut = Invoke-Case Write ([pscustomobject]@{ Procedure='dbo.ExternalTransaction'; Content=@(); TransactionMode='None' }) $optOutSession
 Assert (-not $optOut.Failure() -and $null -eq $optOutSession.Command.Transaction -and
     ($optOutSession.Events -join ',') -notmatch 'begin|commit|rollback') 'Stored-procedure transaction opt-out failed.'
-$invalidOptOutPlan = [pscustomobject]@{ Config=[pscustomobject]@{ CommandText='delete from dbo.Items'; TransactionMode='None' } }
+$invalidOptOutPlan = [pscustomobject]@{ Config=@{ Sql=[pscustomobject]@{ CommandText='delete from dbo.Items'; TransactionMode='None' } } }
 $invalidOptOut = $adapter.Invoke('FusionDatabase', 'Delete', $conduction, $invalidOptOutPlan, $item)
 Assert ($invalidOptOut.Failure()) 'Delete accepted the transaction opt-out.'
 
@@ -638,14 +638,21 @@ foreach ($field in @('ExpectedServer','ExpectedDatabase')) {
     $override = @{ CommandText=$adminText }
     $override[$field] = $null
     $beforeCount = & $module { $script:TestSessions.Count }
-    $rejected = $adapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=$override },$item)
+    $rejected = $adapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=@{ Sql=$override } },$item)
     Assert ($rejected.Failure() -and (& $module { $script:TestSessions.Count }) -eq $beforeCount) "Admin accepted $field target override."
+    $nested = @{ Sql=@{ CommandText=$adminText } }
+    $nested.Sql[$field] = $null
+    $rejected = $adapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=$nested },$item)
+    Assert ($rejected.Failure() -and (& $module { $script:TestSessions.Count }) -eq $beforeCount) "Admin accepted nested $field target override."
 }
+$beforeCount = & $module { $script:TestSessions.Count }
+$flat = $adapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=@{ CommandText=$adminText } },$item)
+Assert ($flat.Failure() -and (& $module { $script:TestSessions.Count }) -eq $beforeCount) 'Admin accepted flat legacy CommandText.'
 foreach ($addresses in @(@('http://invalid.example'), @('one.database.windows.net','two.database.windows.net'))) {
     $invalidAdapter = Resolve-Data_AzureSql
     $null = $invalidAdapter.Construct(@{ Resource='reviewed_db'; Addresses=$addresses })
     $beforeCount = & $module { $script:TestSessions.Count }
-    $rejected = $invalidAdapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=@{ CommandText=$adminText } },$item)
+    $rejected = $invalidAdapter.Invoke('FusionDatabase','Admin',$conduction,@{ Config=@{ Sql=@{ CommandText=$adminText } } },$item)
     Assert ($rejected.Failure() -and (& $module { $script:TestSessions.Count }) -eq $beforeCount) 'Malformed registered SQL target reached the session factory.'
 }
 foreach ($field in @('DataSource','Database')) {
@@ -666,11 +673,11 @@ Assert (-not $adminGo.Failure() -and $adminGoSession.Command.CommandText -ceq $a
 
 $adminInvalidSession = New-TestCase $null
 $adminInvalid = $adapter.Invoke('FusionDatabase', 'Admin', $conduction,
-    ([pscustomobject]@{ Config=[pscustomobject]@{ CommandText='  ' } }), $item)
+    ([pscustomobject]@{ Config=@{ Sql=[pscustomobject]@{ CommandText='  ' } } }), $item)
 Assert ($adminInvalid.Failure() -and -not $adminInvalidSession.Opened -and
     ($adminInvalid.GetEntries() | Out-String) -notmatch 'CommandText') 'Admin accepted a blank command or exposed validation details.'
 $adminInvalidType = $adapter.Invoke('FusionDatabase', 'Admin', $conduction,
-    ([pscustomobject]@{ Config=[pscustomobject]@{ CommandText=42 } }), $item)
+    ([pscustomobject]@{ Config=@{ Sql=[pscustomobject]@{ CommandText=42 } } }), $item)
 Assert ($adminInvalidType.Failure()) 'Admin accepted a non-string command.'
 
 $adminFailureSession = New-TestCase $null

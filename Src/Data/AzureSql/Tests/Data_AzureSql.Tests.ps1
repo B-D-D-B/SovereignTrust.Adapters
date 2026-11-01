@@ -22,18 +22,18 @@ Assert-True ($adapter.Signal.GetJacket().GetResult() -eq $jacket) 'Adapter signa
 
 $conduction = [Signal]::Start('AzureSqlTest.Conduction') | Select-Object -Last 1
 $item = [Signal]::Start('AzureSqlTest.Item') | Select-Object -Last 1
-$queryPlan = [PSCustomObject]@{ Config = [PSCustomObject]@{ CommandText = 'select 1'; Parameters = @{ '@Id' = 1 }; CommandTimeoutSeconds = 15 } }
+$queryPlan = [PSCustomObject]@{ Config = [PSCustomObject]@{ Sql = [PSCustomObject]@{ CommandText = 'select 1'; Parameters = @{ '@Id' = 1 }; CommandTimeoutSeconds = 15 } } }
 $queryBefore = $queryPlan | ConvertTo-Json -Depth 100 -Compress
 
 $unsupported = $adapter.Invoke('FusionDatabase', 'Other', $conduction, $queryPlan, $item)
 Assert-True ($unsupported.Failure()) 'Unsupported activity should return a failed signal.'
 $missingConfig = $adapter.Invoke('FusionDatabase', 'Query', $conduction, [PSCustomObject]@{}, $item)
 Assert-True ($missingConfig.Failure()) 'Missing Config should return a failed signal.'
-$missingCommand = $adapter.Invoke('FusionDatabase', 'Query', $conduction, [PSCustomObject]@{ Config = @{} }, $item)
+$missingCommand = $adapter.Invoke('FusionDatabase', 'Query', $conduction, [PSCustomObject]@{ Config = @{ Sql = @{} } }, $item)
 Assert-True ($missingCommand.Failure()) 'Missing CommandText should return a failed signal.'
-$missingProcedure = $adapter.Invoke('FusionDatabase', 'Write', $conduction, [PSCustomObject]@{ Config = @{} }, $item)
+$missingProcedure = $adapter.Invoke('FusionDatabase', 'Write', $conduction, [PSCustomObject]@{ Config = @{ Sql = @{} } }, $item)
 Assert-True ($missingProcedure.Failure()) 'Missing Procedure should return a failed signal.'
-$missingDeleteCommand = $adapter.Invoke('FusionDatabase', 'Delete', $conduction, [PSCustomObject]@{ Config = @{} }, $item)
+$missingDeleteCommand = $adapter.Invoke('FusionDatabase', 'Delete', $conduction, [PSCustomObject]@{ Config = @{ Sql = @{} } }, $item)
 Assert-True ($missingDeleteCommand.Failure()) 'Delete without CommandText should return a failed signal.'
 $invalidResource = $adapter.Invoke('FusionDatabase', 'Query', $conduction, $queryPlan, $item)
 Assert-True ($invalidResource.Failure()) 'Invalid connection resource should return a failed signal.'

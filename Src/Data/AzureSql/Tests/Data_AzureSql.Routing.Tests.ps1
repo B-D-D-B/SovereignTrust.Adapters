@@ -57,9 +57,9 @@ $registration = Register-AdapterToMappedSlot -ConductorJacketSignal $conductor.S
     -Signal $runSignal -ConductionContext $conductor.Signal -Adapter $azureSql | Select-Object -Last 1
 Assert-True (-not $registration.Failure()) 'Could not bind FusionDatabase to MappedDataAdapter.'
 
-$plan = [PSCustomObject]@{ Adapter = 'Data.FusionDatabase'; Activity = 'Query'; Config = [PSCustomObject]@{
+$plan = [PSCustomObject]@{ Adapter = 'Data.FusionDatabase'; Activity = 'Query'; Config = [PSCustomObject]@{ Sql = [PSCustomObject]@{
     CommandText = 'select Id from dbo.Records where Id = @Id'; Parameters = @{ '@Id' = 7 }; CommandTimeoutSeconds = 15
-} }
+} } }
 $before = $plan | ConvertTo-Json -Depth 100 -Compress
 $result = Invoke-MappedAdapter -Adapter $plan.Adapter -Activity $plan.Activity -Signal $runSignal -Plan $plan -ItemSignal $itemSignal | Select-Object -Last 1
 Assert-True (-not $result.Failure() -and $result.HasResult()) 'Data.FusionDatabase routing failed.'

@@ -110,13 +110,19 @@ class Data_AzureDataExplorer {
                 }
 
                 "WriteItem" {
-                    $TableNameSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.TableName"  | Select-Object -Last 1
-                    $MappingNameSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.MappingName"  | Select-Object -Last 1
+                    if ($null -eq $config) { return $opSignal.LogCritical('InvalidConfig') }
+                    foreach ($name in @('TableName', 'MappingName', 'ContentKey')) {
+                        if (Test-ADXAdminFieldPresence $config $name) {
+                            return $opSignal.LogCritical("Legacy Config.$name is not supported; use Config.ADX.$name.")
+                        }
+                    }
+                    $TableNameSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.ADX.TableName"  | Select-Object -Last 1
+                    $MappingNameSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.ADX.MappingName"  | Select-Object -Last 1
                     if ($opSignal.MergeSignalAndVerifyFailure($TableNameSignal) -or $opSignal.MergeSignalAndVerifyFailure($MappingNameSignal)) {
                         return $opSignal
                     }
 
-                    $ContentKeySignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.ContentKey" -Default "Content" | Select-Object -Last 1
+                    $ContentKeySignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.ADX.ContentKey" -Default "Content" | Select-Object -Last 1
                     $ContentKey = $ContentKeySignal.GetResult()
 
                     $RowsSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "*.#.$ContentKey.@" | Select-Object -Last 1
