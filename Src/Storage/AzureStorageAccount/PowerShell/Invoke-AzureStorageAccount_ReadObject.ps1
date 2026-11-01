@@ -17,7 +17,16 @@ function Invoke-AzureStorageAccount_ReadObject {
     ) | Select-Object -Last 1
 
     try {
-        $targetPathProvided = $null -ne $Plan.Config -and $null -ne $Plan.Config.PSObject.Properties['TargetPath']
+        $config = $Plan.Config
+        $targetPathProvided = $null -ne $config -and $(if ($config -is [System.Collections.IDictionary]) { $config.Contains('TargetPath') } else { $null -ne $config.PSObject.Properties['TargetPath'] })
+        $hasDetail = $null -ne $config -and $(if ($config -is [System.Collections.IDictionary]) { $config.Contains('ResultDetail') } else { $null -ne $config.PSObject.Properties['ResultDetail'] })
+        $resultDetail = $false
+        if ($hasDetail) {
+            $detailValue = if ($config -is [System.Collections.IDictionary]) { $config['ResultDetail'] } else { $config.ResultDetail }
+            if ($detailValue -isnot [bool]) { return $opSignal.LogCritical('Config.ResultDetail must be a native Boolean.') }
+            $resultDetail = $detailValue
+        }
+        if ($resultDetail -and -not $targetPathProvided) { return $opSignal.LogCritical('Config.ResultDetail requires Config.TargetPath for Read.') }
         if ($targetPathProvided) {
             $targetPath = [string]$Plan.Config.TargetPath
             if ([string]::IsNullOrWhiteSpace($targetPath) -or -not [System.IO.Path]::IsPathFullyQualified($targetPath) -or $targetPath -match '^[^:]+::') {
@@ -26,6 +35,7 @@ function Invoke-AzureStorageAccount_ReadObject {
             if ([bool]$Plan.Config.ReturnHttpStatus) {
                 return $opSignal.LogCritical('Config.TargetPath cannot be combined with ReturnHttpStatus.')
             }
+            $targetPath = [System.IO.Path]::GetFullPath($targetPath)
         }
         # ░▒▓█ NORMALIZE FILE EXTENSION █▓▒░
         if (
@@ -88,7 +98,35 @@ function Invoke-AzureStorageAccount_ReadObject {
                         $content = $content | ConvertTo-Json -Depth 100
                     }
 
-                    $opSignal.SetResult($content)
+                    if ($resultDetail) {
+                        if (-not [string]::Equals([string]$content, $targetPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+                            throw 'REST read returned a different Config.TargetPath.'
+                        }
+                        $stream = [System.IO.File]::Open($targetPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+                        $detailReceipt = $null
+                        try {
+                            $before = [System.IO.FileInfo]::new($targetPath)
+                            $beforeLength = [long]$before.Length
+                            $beforeWrite = $before.LastWriteTimeUtc
+                            $beforeCreated = $before.CreationTimeUtc
+                            $length = [long]$stream.Length
+                            $digest = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData($stream))
+                            $after = [System.IO.FileInfo]::new($targetPath)
+                            if ($beforeLength -ne $length -or $after.Length -ne $length -or
+                                $beforeWrite -ne $after.LastWriteTimeUtc -or
+                                $beforeCreated -ne $after.CreationTimeUtc) {
+                                throw 'Config.TargetPath changed while computing result detail.'
+                            }
+                            $detailReceipt = [pscustomobject]@{
+                                TargetPath = $targetPath
+                                ByteLength = $length
+                                Sha256 = $digest
+                            }
+                        }
+                        finally { $stream.Dispose() }
+                        $opSignal.SetResult($detailReceipt)
+                    }
+                    else { $opSignal.SetResult($content) }
                     $opSignal.LogInformation(
                         "📄 Found and read Azure blob: '$blobPath'"
                     )

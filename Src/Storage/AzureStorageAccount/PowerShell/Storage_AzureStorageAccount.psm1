@@ -186,6 +186,14 @@ class Storage_AzureStorageAccount {
                     break
                 }
                 "Read" {
+                    $config = $Plan.Config
+                    $hasDetail = $null -ne $config -and $(if ($config -is [System.Collections.IDictionary]) { $config.Contains('ResultDetail') } else { $null -ne $config.PSObject.Properties['ResultDetail'] })
+                    if ($hasDetail) {
+                        $detailValue = if ($config -is [System.Collections.IDictionary]) { $config['ResultDetail'] } else { $config.ResultDetail }
+                        if ($detailValue -isnot [bool]) { return $opSignal.LogCritical('Config.ResultDetail must be a native Boolean.') }
+                        $hasTargetPath = if ($config -is [System.Collections.IDictionary]) { $config.Contains('TargetPath') } else { $null -ne $config.PSObject.Properties['TargetPath'] }
+                        if ($detailValue -and -not $hasTargetPath) { return $opSignal.LogCritical('Config.ResultDetail requires Config.TargetPath for Read.') }
+                    }
                     $callSignal = Invoke-AzureStorageAccount_ReadObject `
                         -ConductionSignal $ConductionSignal `
                         -Signal $this.Signal `

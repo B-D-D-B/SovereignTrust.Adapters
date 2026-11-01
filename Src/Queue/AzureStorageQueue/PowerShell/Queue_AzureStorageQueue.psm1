@@ -290,6 +290,14 @@ class Queue_AzureStorageQueue {
                 }
 
                 "HandleMessage" {
+                    $handleConfig = $Plan.Config
+                    $hasResultDetail = $null -ne $handleConfig -and $(if ($handleConfig -is [System.Collections.IDictionary]) { $handleConfig.Contains('ResultDetail') } else { $null -ne $handleConfig.PSObject.Properties['ResultDetail'] })
+                    $resultDetail = $false
+                    if ($hasResultDetail) {
+                        $detailValue = if ($handleConfig -is [System.Collections.IDictionary]) { $handleConfig['ResultDetail'] } else { $handleConfig.ResultDetail }
+                        if ($detailValue -isnot [bool]) { return $opSignal.LogCritical('Config.ResultDetail must be a native Boolean for HandleMessage.') }
+                        $resultDetail = $detailValue
+                    }
                     $MessageTextSignal = Resolve-PathFromDictionary -Dictionary $ItemSignal -Path "%.@.MessageText" -Default $null -SignalLevel "Information" | Select-Object -Last 1
                     if (-not $MessageTextSignal.HasResult() -or [string]::IsNullOrWhiteSpace([string]$MessageTextSignal.GetResult())) {
                         $MessageTextSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config.MessageText" -Default $null -SignalLevel "Information" | Select-Object -Last 1
@@ -348,6 +356,15 @@ class Queue_AzureStorageQueue {
 
                     $name = $nameSignal.GetResult()
                     $reply = $replySignal.GetResult()
+                    if ($resultDetail -and ($name -ine 'path' -or [string]::IsNullOrWhiteSpace([string]$channelId) -or [string]::IsNullOrWhiteSpace([string]$reply))) {
+                        return $opSignal.LogCritical('ResultDetail requires a path route with channel ID and reply path before session effects.')
+                    }
+                    if ($resultDetail) {
+                        $replyParts = ([string]$reply) -split '\.'
+                        if ($replyParts.Count -lt 2 -or [string]::IsNullOrWhiteSpace($replyParts[0]) -or [string]::IsNullOrWhiteSpace($replyParts[1])) {
+                            return $opSignal.LogCritical('ResultDetail requires a container and resource in the path reply before session effects.')
+                        }
+                    }
   
 
                     $userTitleSignal = Resolve-PathFromDictionary -Dictionary $MessageItem -Path "@.member.user.global_name" -SignalLevel "Warning" | Select-Object -Last 1
@@ -363,7 +380,7 @@ class Queue_AzureStorageQueue {
                         Activity = "RequestOrRegister"
                     }
 
-                    $opSignal.SetResult($messageItem)
+                    if (-not $resultDetail) { $opSignal.SetResult($messageItem) }
 
                     $SessionItemResult = [PSCustomObject]@{
                         Id    = $channelId
@@ -392,6 +409,15 @@ class Queue_AzureStorageQueue {
                             }
 
                             "path" {
+                                if ($sessionResult -isnot [Signal] -or $opSignal.MergeSignalAndVerifyFailure($sessionResult) -or -not $sessionResult.HasResult()) {
+                                    return $opSignal.LogCritical('HandleMessage path could not resolve a session.')
+                                }
+                                $sessionNative = $sessionResult.GetResult($true)
+                                if ($null -eq $sessionNative) { return $opSignal.LogCritical('HandleMessage path returned an unusable session.') }
+                                $sessionIdSignal = Resolve-PathFromDictionary -Dictionary $sessionNative -Path 'Id' -SignalLevel 'Warning' | Select-Object -Last 1
+                                if ($sessionIdSignal.Failure() -or -not $sessionIdSignal.HasResult() -or [string]$sessionIdSignal.GetResult() -cne [string]$channelId) {
+                                    return $opSignal.LogCritical('HandleMessage path session identity did not match the channel.')
+                                }
                                 # Open -> run a plan using path, we'll have default values plugged into the config of the caller of the service and then override with parts Container.Resource.Path, special handling for : as the delimeter in order to support periods in paths converting to slashes
                                 # Can Open items by running a plan that puts content in memory and then subsequent plans can use that
                                 $BaseConductionPlanMapping = [pscustomobject]@{
@@ -450,9 +476,34 @@ class Queue_AzureStorageQueue {
                                 }
 
                                 $xyz = Invoke-MappedAdapter -Adapter "Condenser.Memory" -Activity "Generate" -Plan $BaseConductionPlanRoute -Signal $ConductionSignal -ItemSignal $SentItemSignal | Select-Object -Last 1
+                                if ($xyz -isnot [Signal] -or $opSignal.MergeSignalAndVerifyFailure($xyz)) {
+                                    return $opSignal.LogCritical('HandleMessage path plan load failed.')
+                                }
                                 $PlanSignal = Resolve-PathFromDictionary -Dictionary $SentItemSignal -Path "*.#.$($BaseConductionPlanMapping.Key)" | Select-Object -Last 1
+                                if ($PlanSignal -isnot [Signal] -or $opSignal.MergeSignalAndVerifyFailure($PlanSignal) -or -not $PlanSignal.HasResult()) {
+                                    return $opSignal.LogCritical('HandleMessage path did not produce a keyed plan.')
+                                }
+                                $selectedPlan = $PlanSignal.GetResult($true)
+                                if ($null -eq $selectedPlan -or $selectedPlan -is [string]) { return $opSignal.LogCritical('HandleMessage path produced an unusable plan.') }
+                                $planNameSignal = Resolve-PathFromDictionary -Dictionary $selectedPlan -Path 'Name' -SignalLevel 'Warning' | Select-Object -Last 1
+                                $phasesSignal = Resolve-PathFromDictionary -Dictionary $selectedPlan -Path 'Phases' -SignalLevel 'Warning' | Select-Object -Last 1
+                                if ($planNameSignal.Failure() -or -not $planNameSignal.HasResult() -or [string]::IsNullOrWhiteSpace([string]$planNameSignal.GetResult()) -or
+                                    $phasesSignal.Failure() -or -not $phasesSignal.HasResult() -or $phasesSignal.GetResult() -isnot [System.Collections.IEnumerable] -or $phasesSignal.GetResult() -is [string]) {
+                                    return $opSignal.LogCritical('HandleMessage path plan lacks usable Name and Phases.')
+                                }
 
-                                Invoke-MappedAdapter -Adapter "Conduction.System" -Activity "Invoke" -Plan $PlanSignal.GetResult($true) -Signal $ConductionSignal -ItemSignal $sessionResult | Select-Object -Last 1
+                                $conductionResult = Invoke-MappedAdapter -Adapter "Conduction.System" -Activity "Invoke" -Plan $selectedPlan -Signal $ConductionSignal -ItemSignal $sessionResult | Select-Object -Last 1
+                                if ($conductionResult -isnot [Signal] -or $opSignal.MergeSignalAndVerifyFailure($conductionResult)) {
+                                    return $opSignal.LogCritical('HandleMessage path conduction failed.')
+                                }
+                                if ($resultDetail) {
+                                    $opSignal.SetResult([pscustomobject]@{
+                                        Route = 'path'
+                                        SessionResolved = $true
+                                        PlanLoaded = $true
+                                        ConductionCompleted = $true
+                                    })
+                                }
 
                                 # TODO NEXT: Need to put in a plan that loads or reloads a publisher, etc and then add a plan to persist the object
                                 break
