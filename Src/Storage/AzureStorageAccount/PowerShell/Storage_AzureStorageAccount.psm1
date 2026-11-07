@@ -41,6 +41,12 @@ class Storage_AzureStorageAccount {
                 )
             }
 
+            $storageJacket = Resolve-StorageResourceRoutesJacket -Jacket $dictionary -Family AzureStorageAccount | Select-Object -Last 1
+            if ($storageJacket.Failure() -or -not $storageJacket.HasResult()) {
+                return $opSignal.MergeSignal($storageJacket).LogCritical('AzureStorageAccount jacket is invalid.')
+            }
+            $dictionary = $storageJacket.GetResult()
+
             $this.Signal = [Signal]::Start(
                 "Construct-AzureStorageAccount"
             ) | Select-Object -Last 1

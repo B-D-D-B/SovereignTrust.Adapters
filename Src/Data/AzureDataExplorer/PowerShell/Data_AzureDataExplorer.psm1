@@ -29,6 +29,12 @@ class Data_AzureDataExplorer {
                 return $opSignal.LogCritical("Cannot construct Data_AzureDataExplorer — provided dictionary is null.")
             }
 
+            $resolved = Resolve-RemainingResourceRoutesJacket -Jacket $dictionary -Family AzureDataExplorer | Select-Object -Last 1
+            if ($resolved.Failure() -or -not $resolved.HasResult()) {
+                return $opSignal.MergeSignal($resolved).LogCritical('ADX jacket is invalid.')
+            }
+            $dictionary = $resolved.GetResult()
+
             $this.Signal = [Signal]::Start("Data_AzureDataExplorer") | Select-Object -Last 1
 
             $jacket = [Signal]::Start("Data_AzureDataExplorer") | Select-Object -Last 1 

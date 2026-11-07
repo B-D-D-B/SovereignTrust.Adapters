@@ -1,4 +1,9 @@
 using module SignalGraph
+
+if (-not (Get-Module -Name 'SovereignTrust.Foundation')) {
+    $foundationPath = Join-Path $PSScriptRoot '../../../../../SovereignTrust.Foundation/Src/PowerShell/SovereignTrust.Foundation.psd1'
+    Import-Module (Resolve-Path $foundationPath).ProviderPath -ErrorAction Stop
+}
 # =============================================================================
 # LocalFileSystem Storage Module (Signal Compliant)
 # SovereignTrust Adapters • SDA Standard Storage Adapter
@@ -27,22 +32,22 @@ function Get-JsonFromFile {
     )
 
     $path = Get-VirtualFilePath -Folder $Folder -FileName $FileName
-    $signal = [Signal]::new("Get-JsonFromFile:$path")
+    $signal = [Signal]::Start("Get-JsonFromFile:$path") | Select-Object -Last 1
 
     try {
         if (!(Test-Path -Path $path)) {
-            $signal.LogCritical("File not found: $path")
+            $null = $signal.LogCritical("File not found: $path")
             return $signal
         }
 
         $jsonString = Get-Content -Path $path -Raw
         $parsedObject = $jsonString | ConvertFrom-Json
 
-        $signal.SetResult($parsedObject)
-        $signal.LogInformation("Successfully loaded JSON object from $path.")
+        $null = $signal.SetResult($parsedObject)
+        $null = $signal.LogInformation("Successfully loaded JSON object from $path.")
     }
     catch {
-        $signal.LogCritical("Error loading JSON from $($path): $_")
+        $null = $signal.LogCritical("Error loading JSON from $($path): $_")
     }
 
     return $signal
@@ -55,21 +60,21 @@ function Get-XmlFromFile {
     )
 
     $path = Get-VirtualFilePath -Folder $Folder -FileName $FileName
-    $signal = [Signal]::new("Get-XmlFromFile:$path")
+    $signal = [Signal]::Start("Get-XmlFromFile:$path") | Select-Object -Last 1
 
     try {
         if (!(Test-Path -Path $path)) {
-            $signal.LogCritical("File not found: $path")
+            $null = $signal.LogCritical("File not found: $path")
             return $signal
         }
 
         $xmlDocument = [xml](Get-Content -Path $path -Raw)
 
-        $signal.SetResult($xmlDocument)
-        $signal.LogInformation("Successfully loaded XML object from $path.")
+        $null = $signal.SetResult($xmlDocument)
+        $null = $signal.LogInformation("Successfully loaded XML object from $path.")
     }
     catch {
-        $signal.LogCritical("Error loading XML from $($path): $_")
+        $null = $signal.LogCritical("Error loading XML from $($path): $_")
     }
 
     return $signal
@@ -82,19 +87,19 @@ function Remove-FileFromFileSystem {
     )
 
     $path = Get-VirtualFilePath -Folder $Folder -FileName $FileName
-    $signal = [Signal]::new("Remove-FileFromFileSystem:$path")
+    $signal = [Signal]::Start("Remove-FileFromFileSystem:$path") | Select-Object -Last 1
 
     try {
         if (Test-Path -Path $path) {
             Remove-Item -Path $path -Force
-            $signal.LogInformation("File deleted: $path.")
+            $null = $signal.LogInformation("File deleted: $path.")
         }
         else {
-            $signal.LogWarning("File to delete not found: $path.")
+            $null = $signal.LogWarning("File to delete not found: $path.")
         }
     }
     catch {
-        $signal.LogCritical("Error deleting file: $_")
+        $null = $signal.LogCritical("Error deleting file: $_")
     }
 
     return $signal
@@ -105,20 +110,20 @@ function Get-FileListFromDirectory {
         [Parameter(Mandatory)] [string]$Folder
     )
 
-    $signal = [Signal]::new("Get-FileListFromDirectory:$Folder")
+    $signal = [Signal]::Start("Get-FileListFromDirectory:$Folder") | Select-Object -Last 1
 
     try {
         if (!(Test-Path -Path $Folder)) {
-            $signal.LogCritical("Folder not found: $Folder")
+            $null = $signal.LogCritical("Folder not found: $Folder")
             return $signal
         }
 
         $files = Get-ChildItem -Path $Folder | Select-Object -ExpandProperty Name
-        $signal.SetResult($files)
-        $signal.LogInformation("Listed files in folder: $Folder.")
+        $null = $signal.SetResult($files)
+        $null = $signal.LogInformation("Listed files in folder: $Folder.")
     }
     catch {
-        $signal.LogCritical("Error listing directory contents: $_")
+        $null = $signal.LogCritical("Error listing directory contents: $_")
     }
 
     return $signal

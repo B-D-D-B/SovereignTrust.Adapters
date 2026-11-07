@@ -12,13 +12,13 @@ if (-not (Get-Module -Name $sgModuleName)) {
 . "$PSScriptRoot/Resolve-Function.ps1"
 
 class Conduction_ST {
-    [MappedConductionAdapter]$MappedAdapter
+    [object]$MappedAdapter
     [Signal]$Signal
 
     Conduction_ST() {
     }
 
-    Conduction_ST([MappedConductionAdapter]$mappedAdapter) {
+    Conduction_ST([object]$mappedAdapter) {
         $this.MappedAdapter = $mappedAdapter
     }
 
@@ -29,6 +29,12 @@ class Conduction_ST {
             if ($null -eq $dictionary) {
                 return $opSignal.LogCritical("Cannot construct Conduction_ST — provided dictionary is null.")
             }
+
+            $resolved = Resolve-RemainingResourceRoutesJacket -Jacket $dictionary -Family Conduction_ST | Select-Object -Last 1
+            if ($resolved.Failure() -or -not $resolved.HasResult()) {
+                return $opSignal.MergeSignal($resolved).LogCritical('Conduction jacket is invalid.')
+            }
+            $dictionary = $resolved.GetResult()
 
             $this.Signal = [Signal]::Start("Conduction_ST") | Select-Object -Last 1
 

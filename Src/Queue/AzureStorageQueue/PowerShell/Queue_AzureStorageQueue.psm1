@@ -45,6 +45,12 @@ class Queue_AzureStorageQueue {
                 return $opSignal
             }
 
+            $resolved = Resolve-RemainingResourceRoutesJacket -Jacket $dictionary -Family AzureStorageQueue | Select-Object -Last 1
+            if ($resolved.Failure() -or -not $resolved.HasResult()) {
+                return $opSignal.MergeSignal($resolved).LogCritical('Queue jacket is invalid.')
+            }
+            $dictionary = $resolved.GetResult()
+
             $this.Signal = [Signal]::Start("Queue_AzureStorageQueue") | Select-Object -Last 1
 
             $jacket = [Signal]::Start("Queue_AzureStorageQueue.Jacket") | Select-Object -Last 1

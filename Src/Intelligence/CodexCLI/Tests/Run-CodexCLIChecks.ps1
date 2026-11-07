@@ -6,7 +6,7 @@ $manifest = Join-Path $root 'PowerShell/Intelligence_CodexCLI.psd1'
 $foundationManifest = Join-Path $PSScriptRoot '../../../../../SovereignTrust.Foundation/Src/PowerShell/SovereignTrust.Foundation.psd1'
 $project = Join-Path $PSScriptRoot 'FixtureCli/FixtureCli.csproj'
 $output = Join-Path $PSScriptRoot 'FixtureCli/out'
-$workspace = Join-Path $PSScriptRoot 'FixtureWorkspace'
+$workspace = Join-Path 'C:/GitHub' ('codexcli-fixture-workspace-' + [guid]::NewGuid().ToString('N'))
 [IO.Directory]::CreateDirectory($workspace) | Out-Null
 & dotnet build $project -c Release -o $output --nologo | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Fixture build failed.' }

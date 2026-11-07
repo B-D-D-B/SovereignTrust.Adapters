@@ -45,8 +45,11 @@ $firstAgain=$adapter.Invoke('OpenAI','SendMessage',$signal,$plan,$signal)
 Assert (-not $firstAgain.Failure() -and $global:OpenAIRequest.Headers.Authorization -ceq 'Bearer dummy-native-key' -and
     ($global:OpenAIRequest.Body | ConvertFrom-Json).model -ceq 'fixture-model') 'first slot changed after second construction'
 $plan.Config | Add-Member -NotePropertyName ModelKey -NotePropertyValue other
+$before = $global:OpenAIHttpCalls
 $original = $adapter.Invoke('OpenAI','SendMessageOriginal',$signal,$plan,$signal)
-Assert (-not $original.Failure() -and ($global:OpenAIRequest.Body | ConvertFrom-Json).reasoning.effort -ceq 'low') 'explicit profile/original differs'
+Assert ($original.Failure() -and -not $original.HasResult() -and $global:OpenAIHttpCalls -eq $before) 'removed original activity sent HTTP'
+$profileSend = $adapter.Invoke('OpenAI','SendMessage',$signal,$plan,$signal)
+Assert (-not $profileSend.Failure() -and ($global:OpenAIRequest.Body | ConvertFrom-Json).reasoning.effort -ceq 'low') 'explicit profile differs'
 $plan.Config.ModelKey = 'unknown'; $before = $global:OpenAIHttpCalls
 Assert ($adapter.Invoke('OpenAI','SendMessage',$signal,$plan,$signal).Failure() -and $global:OpenAIHttpCalls -eq $before) 'unknown profile sent HTTP'
 $plan.Config.ModelKey = 'default'

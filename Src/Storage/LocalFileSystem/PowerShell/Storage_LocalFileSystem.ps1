@@ -6,12 +6,18 @@ class Storage_LocalFileSystem {
     }
 
     [Signal] Construct([object]$dictionary) {
-        $signal = [Signal]::new("Construct-LocalFileSystem")
+        $signal = [Signal]::Start("Construct-LocalFileSystem") | Select-Object -Last 1
 
         try {
             if ($null -eq $dictionary) {
                 return $signal.LogCritical("Cannot construct LocalFileSystem — provided dictionary is null.")
             }
+
+            $storageJacket = Resolve-StorageResourceRoutesJacket -Jacket $dictionary -Family LocalFileSystem | Select-Object -Last 1
+            if ($storageJacket.Failure() -or -not $storageJacket.HasResult()) {
+                return $signal.MergeSignal($storageJacket).LogCritical('LocalFileSystem jacket is invalid.')
+            }
+            $dictionary = $storageJacket.GetResult()
 
             $this.Jacket = $dictionary
             $signal.LogInformation("LocalFileSystem constructed successfully with provided jacket.")

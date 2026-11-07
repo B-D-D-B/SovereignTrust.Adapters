@@ -10,6 +10,11 @@ class Data_AzureSql {
         $opSignal = [Signal]::Start('Data_AzureSql.Construct') | Select-Object -Last 1
         try {
             if ($null -eq $dictionary) { throw 'AzureSql configuration is required.' }
+            $resolved = Resolve-RemainingResourceRoutesJacket -Jacket $dictionary -Family AzureSql | Select-Object -Last 1
+            if ($resolved.Failure() -or -not $resolved.HasResult()) {
+                return $opSignal.MergeSignal($resolved).LogCritical('SQL jacket is invalid.')
+            }
+            $dictionary = $resolved.GetResult()
             $this.Configuration = $dictionary
             $this.Signal = [Signal]::Start('Data_AzureSql') | Select-Object -Last 1
             $jacket = [Signal]::Start('Data_AzureSql.Configuration') | Select-Object -Last 1

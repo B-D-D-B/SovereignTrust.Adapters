@@ -118,7 +118,8 @@ $vaultModule = Get-Module Storage_AzureKeyVault
         $script:calls += $Plan.Config
         $result = [Signal]::Start('ListVaultMock', $ItemSignal) | Select-Object -Last 1
         $index = $script:calls.Count - 1
-        if ($script:failPage -eq $index) { $result.LogCritical('Mock page failed') | Out-Null }
+        if ($script:throwPage -eq $index) { throw 'SENTINEL_SECRET provider exception' }
+        if ($script:failPage -eq $index) { $result.LogCritical('SENTINEL_SECRET failed page') | Out-Null }
         else { $result.SetResult($script:pages[$index]) }
         return $result
     }
@@ -130,6 +131,7 @@ $vaultModule = Get-Module Storage_AzureKeyVault
         return $adapter.Invoke('Test', 'List', $signal, [pscustomobject]@{ Config = [pscustomobject]$config }, $signal)
     }
     $script:failPage = -1
+    $script:throwPage = -1
     $script:pages = @(
         [pscustomobject]@{ value = @(
             [pscustomobject]@{ id = 'https://vault.vault.azure.net/secrets/app-one'; attributes = [pscustomobject]@{ updated = 1735689600 } },
@@ -144,7 +146,8 @@ $vaultModule = Get-Module Storage_AzureKeyVault
     Assert ((@($result.GetResult().Items.FileName) -join ',') -eq 'app-two,app-one') 'Vault raw-prefix/default sort failed.'
     Assert ($null -eq $result.GetResult().Items[0].Size -and $script:calls.Count -eq 2 -and
         $script:calls[0].Uri -eq 'https://vault.vault.azure.net/secrets?api-version=7.4' -and
-        $script:calls[1].Uri -match 'skiptoken=2' -and $script:calls[0].CacheAccessToken) 'Vault metadata/page request failed.'
+        $script:calls[1].Uri -match 'skiptoken=2' -and $script:calls[0].CacheAccessToken -and
+        $script:calls[0].RedactDiagnostics) 'Vault metadata/page request failed.'
     $result = Invoke-Case @{ VirtualPath = 'app'; SortBy = 'DateTime'; SortDirection = 'Ascending' }
     Assert ((@($result.GetResult().Items.FileName) -join ',') -eq 'app-one,app-two') 'Vault DateTime ascending failed.'
     $result = Invoke-Case @{ VirtualPath = 'app'; SortBy = 'Size'; SortDirection = 'Ascending' }
@@ -193,13 +196,24 @@ $vaultModule = Get-Module Storage_AzureKeyVault
         $result = Invoke-Case @{}
         Assert ($result.Failure() -and -not $result.HasResult()) 'Malformed vault page exposed a result.'
     }
-    $script:pages = @([pscustomobject]@{ value = 'unchanged-read-result' })
+    $script:failPage = 0
+    $script:pages = @([pscustomobject]@{ value = @() })
+    $result = Invoke-Case @{}
+    Assert ($result.Failure() -and -not $result.HasResult() -and
+        (@($result.Entries.Message) -join '|') -notmatch 'SENTINEL_SECRET') 'Failed vault List merged provider diagnostics.'
+    $script:failPage = -1
+    $script:throwPage = 0
+    $result = Invoke-Case @{}
+    Assert ($result.Failure() -and -not $result.HasResult() -and
+        (@($result.Entries.Message) -join '|') -notmatch 'SENTINEL_SECRET') 'Vault List exception leaked provider diagnostics.'
+    $script:throwPage = -1
+    $script:pages = @([pscustomobject]@{ StatusCode = 200; Response = [pscustomobject]@{ value = 'unchanged-read-result' } })
     $script:calls = @()
     $signal = [Signal]::Start('VaultReadFixture') | Select-Object -Last 1
     $adapter = [Storage_AzureKeyVault]::new()
     $null = $adapter.Construct([pscustomobject]@{ Addresses = @('https://vault.vault.azure.net/') })
     $read = $adapter.Invoke('Test', 'Read', $signal, [pscustomobject]@{
-        Config = [pscustomobject]@{ VirtualPath = 'a.b.Read.mysecret' }
+        Config = [pscustomobject]@{ VirtualPath = 'Storage.Secrets.Read.mysecret' }
     }, $signal)
     Assert ($read.Success() -and $read.GetResult() -eq 'unchanged-read-result' -and
         $script:calls.Count -eq 1 -and $script:calls[0].Uri -match '/secrets/mysecret') 'Key Vault Read routing regressed.'

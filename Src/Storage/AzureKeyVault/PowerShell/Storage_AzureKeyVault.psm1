@@ -13,6 +13,16 @@ if (-not (Get-Module -Name $stModuleName)) {
 # . "$PSScriptRoot/Update-StorageQueueVisibilityApi.ps1"
 # . "$PSScriptRoot/Write-StorageQueueApi.ps1"
 
+function Test-AzureKeyVaultField {
+    param([object]$Object, [string]$Name)
+    if ($null -eq $Object) { return $false }
+    if ($Object -is [System.Collections.IDictionary]) {
+        foreach ($key in $Object.Keys) { if ([string]$key -ceq $Name) { return $true } }
+        return $false
+    }
+    return $null -ne $Object.PSObject.Properties[$Name]
+}
+
 function Invoke-AzureKeyVault_ListObject {
     param(
         [Parameter(Mandatory)][Signal]$AdapterSignal,
@@ -56,11 +66,10 @@ function Invoke-AzureKeyVault_ListObject {
         while ($uri) {
             if (-not $seen.Add($uri)) { return $opSignal.LogCritical('Repeated Key Vault List continuation.') }
             $restPlan = [pscustomobject]@{ Config = [pscustomobject]@{
-                Uri = $uri; Host = $vaultBase; Method = 'Get'; CacheAccessToken = $true
+                Uri = $uri; Host = $vaultBase; Method = 'Get'; CacheAccessToken = $true; RedactDiagnostics = $true
             } }
             $responseSignal = Invoke-MappedAdapter -Adapter 'Condenser.Rest' -Activity 'Get' -Signal $ConductionSignal -Plan $restPlan -ItemSignal $ItemSignal | Select-Object -Last 1
             if ($null -eq $responseSignal -or $responseSignal.Failure() -or -not $responseSignal.HasResult()) {
-                if ($responseSignal) { $opSignal.MergeSignal($responseSignal) }
                 return $opSignal.LogCritical('Key Vault List page failed.')
             }
             $page = $responseSignal.GetResult($true)
@@ -127,7 +136,7 @@ function Invoke-AzureKeyVault_ListObject {
         $opSignal.SetResult([pscustomobject]@{ Items = [object[]]$filtered.ToArray(); Count = $filtered.Count })
     }
     catch {
-        $opSignal.LogCritical("Key Vault List failed: $($_.Exception.Message)", $null, $_)
+        $opSignal.LogCritical('Key Vault List failed.')
     }
     return $opSignal
 }
@@ -150,6 +159,12 @@ class Storage_AzureKeyVault {
                 $opSignal.LogCritical("Cannot construct Storage_AzureKeyVault — provided dictionary is null.")
                 return $opSignal
             }
+
+            $resolved = Resolve-StorageResourceRoutesJacket -Jacket $dictionary -Family AzureKeyVault | Select-Object -Last 1
+            if ($resolved.Failure() -or -not $resolved.HasResult()) {
+                return $opSignal.LogCritical('Invalid Key Vault storage jacket.')
+            }
+            $dictionary = $resolved.GetResult()
 
             $this.Signal = [Signal]::Start("Storage_AzureKeyVault") | Select-Object -Last 1
 
@@ -191,80 +206,116 @@ class Storage_AzureKeyVault {
                 $opSignal.LogWarning("No Activity provided to Storage_AzureKeyVault.Invoke()")
                 return $opSignal
             }
+            if ((Test-AzureKeyVaultField $Plan.Config 'SourcePath') -or
+                (Test-AzureKeyVaultField $Plan.Config 'TargetPath')) {
+                return $opSignal.LogCritical('Key Vault storage does not support file transfer paths.')
+            }
 
             if ($Activity -ieq 'List') {
                 return Invoke-AzureKeyVault_ListObject -AdapterSignal $this.Signal -ConductionSignal $ConductionSignal -ItemSignal $ItemSignal -Plan $Plan |
                     Select-Object -Last 1
             }
 
-            # Resolve Config from Plan (or from Environment if you prefer)
-            # Convention: Plan contains everything needed to hit the service for this step
-            $configSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path "Config" -SignalLevel "Warning" | Select-Object -Last 1
-            $config = $configSignal.HasResult() ? $configSignal.GetResult() : $null
-
-            if (-not $config) {
-                # Optional fallback: pull config from Environment/Jacket
-                # $env = $ConductionSignal.GetJacket().GetResult()
-                # $configSignal = Resolve-PathFromDictionary -Dictionary $env -Path "Queue.StorageQueue.Config" -SignalLevel "Warning" | Select-Object -Last 1
-                $opSignal.LogWarning("StorageQueue Config not found on Plan.Config (no fallback enabled).")
+            if ($Activity -inotmatch '^(Read|Write|Delete|Exists)$') {
+                return $opSignal.LogCritical('Unsupported Key Vault storage activity.')
             }
-
-            $virtualPathParts = $config.VirtualPath -Split '\.'
-
-            $Activity = $virtualPathParts[2]
-            $Secret = $virtualPathParts[3]
-
-            $resultSignal = $null 
-
-            switch ($Activity) {
-
-                # ---------------------------------------------------------
-                # Canonical verbs
-                # ---------------------------------------------------------
-
-                "Read" {
-                    # Response Message to Discord
-                    $hostUriSignal = Resolve-PathFromDictionary -Dictionary $this.Signal -Path "%.@.Addresses.0" | Select-Object -Last 1
-                    $uri = "$($hostUriSignal.GetResult())secrets/$Secret"#/$applicationId/$interactionToken"
-
-                    $clonePlan = (Resolve-ClonePlan -Plan $Plan | Select-Object -Last 1).GetResult()
-
-                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Uri" -Value $uri
-                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Method" -Value "Get"
-                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Host" -Value $hostUriSignal.GetResult()
-                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.CacheAccessToken" -Value $true
-                    $null = Add-PathToDictionary -Dictionary $clonePlan -Path "Config.Querystring" -Value "?api-version=7.4"
-
-                    # Call Rest Endpoint
-                    $responseSignal = Invoke-MappedAdapter -Adapter "Condenser.Rest" -Activity "Get" -Signal $ConductionSignal -Plan $clonePlan -ItemSignal $ItemSignal
-                    if ($opSignal.MergeSignalAndVerifyFailure($responseSignal)) { return $opSignal }
-
-                    $opSignal.SetResult(($responseSignal.GetResult()).value)
-
-                    break
+            $config = $Plan.Config
+            $hasExplicitPath = Test-AzureKeyVaultField $config 'VirtualPath'
+            $path = if ($hasExplicitPath) {
+                [string]$config.VirtualPath
+            } elseif (Test-AzureKeyVaultField $Plan 'VirtualPath') {
+                [string]$Plan.VirtualPath
+            } else {
+                if (-not [string]::IsNullOrEmpty([string]$Plan.Container)) {
+                    return $opSignal.LogCritical('Key Vault storage Container must be empty.')
                 }
-
-                default {
-                    $opSignal.LogWarning("Unsupported Activity: $Activity")
-                    $resultSignal = [Signal]::Start("StorageQueue.UnsupportedActivity", $ItemSignal) | Select-Object -Last 1
-                    break
-                }
+                '/' + [string]$Plan.Resource
             }
-
-            if ($resultSignal) {
-                $opSignal.MergeSignal($resultSignal)
-                if ($resultSignal.Success()) {
-                    $opSignal.SetResult($resultSignal.GetResult($true))
-                    $opSignal.LogInformation("✅ $Slot.$Activity succeeded.")
+            $legacy = [regex]::Match($path, '^Storage\.Secrets\.Read\.([A-Za-z0-9-]+)$', 'IgnoreCase')
+            if ($legacy.Success) {
+                if ($Activity -ine 'Read') { return $opSignal.LogCritical('Key Vault legacy path activity disagrees with supplied activity.') }
+                $name = $legacy.Groups[1].Value
+            } elseif ($hasExplicitPath) {
+                $name = $path
+            } else {
+                if (-not $path.StartsWith('/')) { return $opSignal.LogCritical('Key Vault mapped path must start with one slash.') }
+                $name = $path.Substring(1)
+            }
+            if ($name -cnotmatch '^[A-Za-z0-9-]{1,127}$' -or
+                (-not $hasExplicitPath -and -not [string]::IsNullOrEmpty([string]$Plan.Container))) {
+                return $opSignal.LogCritical('Invalid Key Vault secret name or container.')
+            }
+            $hostSignal = Resolve-PathFromDictionary -Dictionary $this.Signal -Path '%.@.Addresses.0' | Select-Object -Last 1
+            $vault = $null
+            if ($hostSignal.Failure() -or -not $hostSignal.HasResult() -or
+                -not [uri]::TryCreate([string]$hostSignal.GetResult(), [UriKind]::Absolute, [ref]$vault) -or
+                $vault.Scheme -cne 'https' -or $vault.AbsolutePath.Trim('/') -ne '' -or
+                $vault.Host -notmatch '^[A-Za-z0-9-]+\.vault\.azure\.net$') {
+                return $opSignal.LogCritical('Invalid Key Vault address.')
+            }
+            $base = $vault.GetLeftPart([UriPartial]::Authority)
+            $uri = "$base/secrets/$name"
+            $restConfig = [ordered]@{
+                Uri = $uri; Host = $base; Method = 'Get'; CacheAccessToken = $true
+                Querystring = '?api-version=7.4'; ReturnHttpStatus = $true; RedactDiagnostics = $true
+            }
+            if ($Activity -ieq 'Write') {
+                if (-not (Test-AzureKeyVaultField $config 'Content') -or $null -eq $config.Content -or
+                    (Test-AzureKeyVaultField $config 'SourcePath') -or (Test-AzureKeyVaultField $config 'TargetPath')) {
+                    return $opSignal.LogCritical('Key Vault Write requires supported Content without file transfer paths.')
                 }
-                else {
-                    $opSignal.LogWarning("$Slot.$Activity did not succeed.")
+                if ($config.Content -is [byte[]]) { return $opSignal.LogCritical('Key Vault Write does not accept binary Content.') }
+                $value = if ($config.Content -is [string]) { $config.Content } elseif ($config.Content -is [pscustomobject] -or
+                    $config.Content -is [System.Collections.IDictionary] -or $config.Content -is [array]) {
+                    ConvertTo-Json -InputObject $config.Content -Depth 100 -Compress
+                } else { return $opSignal.LogCritical('Key Vault Write Content type is unsupported.') }
+                if ([Text.Encoding]::UTF8.GetByteCount($value) -gt 25600) {
+                    return $opSignal.LogCritical('Key Vault Write Content exceeds the secret size limit.')
                 }
+                $body = [ordered]@{ value = $value }
+                if (-not [string]::IsNullOrEmpty([string]$config.ContentType)) {
+                    if (([string]$config.ContentType).Length -gt 255) { return $opSignal.LogCritical('Key Vault ContentType is too long.') }
+                    $body.contentType = [string]$config.ContentType
+                }
+                $restConfig.Method = 'Put'
+                $restConfig.ContentType = 'application/json; charset=utf-8'
+                $restConfig.Body = ConvertTo-Json -InputObject $body -Compress -Depth 10
+            } elseif ($Activity -ieq 'Delete') { $restConfig.Method = 'Delete' }
+            $restPlan = [pscustomobject]@{ Config = [pscustomobject]$restConfig }
+            $responseSignal = Invoke-MappedAdapter -Adapter 'Condenser.Rest' -Activity $restConfig.Method -Signal $ConductionSignal -Plan $restPlan -ItemSignal $ItemSignal | Select-Object -Last 1
+            if ($null -eq $responseSignal -or $responseSignal.Failure() -or -not $responseSignal.HasResult()) {
+                return $opSignal.LogCritical('Key Vault request failed.')
+            }
+            $envelope = $responseSignal.GetResult($true)
+            $status = $envelope.StatusCode
+            if ($null -eq $status -or $status -isnot [int]) { return $opSignal.LogCritical('Key Vault response status is invalid.') }
+            if ($Activity -ieq 'Exists' -and $status -eq 404) { $opSignal.SetResult($false); return $opSignal }
+            if ($status -ne 200) { return $opSignal.LogCritical('Key Vault request returned an unsuccessful status.') }
+            $response = $envelope.Response
+            if ($response -is [string] -and $response) {
+                try { $response = ConvertFrom-Json -InputObject $response -Depth 30 -ErrorAction Stop }
+                catch { return $opSignal.LogCritical('Key Vault response is malformed.') }
+            }
+            if ($Activity -ieq 'Exists') { $opSignal.SetResult($true); return $opSignal }
+            if ($Activity -ieq 'Read') {
+                if ($null -eq $response -or $response.value -isnot [string]) { return $opSignal.LogCritical('Key Vault Read response is invalid.') }
+                $opSignal.SetResult([string]$response.value)
+            } elseif ($Activity -ieq 'Write') {
+                $id = $null
+                if ($null -ne $response) { [uri]::TryCreate([string]$response.id, [UriKind]::Absolute, [ref]$id) | Out-Null }
+                if ($null -eq $id -or $id.Scheme -cne 'https' -or $id.Authority -ine $vault.Authority -or
+                    $id.AbsolutePath -notmatch "^/secrets/$name/[^/]+$") { return $opSignal.LogCritical('Key Vault Write response id is invalid.') }
+                $opSignal.SetResult($id.AbsoluteUri)
+            } else {
+                if ($null -eq $response -or [string]$response.id -notmatch "^$([regex]::Escape($base))/secrets/$name/") {
+                    return $opSignal.LogCritical('Key Vault Delete response is invalid.')
+                }
+                $opSignal.SetResult($true)
             }
 
         }
         catch {
-            $opSignal.LogCritical("🔥 Exception in Storage_AzureKeyVault.Invoke: $($_.Exception.Message)", $null, $_)
+            $opSignal.LogCritical('Key Vault storage activity failed.')
         }
 
         return $opSignal

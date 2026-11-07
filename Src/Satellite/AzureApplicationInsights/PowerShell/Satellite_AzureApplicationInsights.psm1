@@ -32,6 +32,12 @@ class Satellite_AzureApplicationInsights {
                 return $opSignal
             }
 
+            $resolved = Resolve-RemainingResourceRoutesJacket -Jacket $dictionary -Family AzureApplicationInsights | Select-Object -Last 1
+            if ($resolved.Failure() -or -not $resolved.HasResult()) {
+                return $opSignal.MergeSignal($resolved).LogCritical('Telemetry jacket is invalid.')
+            }
+            $dictionary = $resolved.GetResult()
+
             $this.Signal = [Signal]::Start("Satellite_AzureApplicationInsights") | Select-Object -Last 1
 
             $jacket = [Signal]::Start("Satellite_AzureApplicationInsights.Jacket") | Select-Object -Last 1

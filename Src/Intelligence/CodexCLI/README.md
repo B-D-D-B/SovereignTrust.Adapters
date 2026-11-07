@@ -1,6 +1,6 @@
 # Intelligence.CodexCLI
 
-This mapped intelligence adapter runs `SendMessage` plans through a separately installed Codex CLI and returns JSON text with `choices[0].message.role = "assistant"` and `choices[0].message.content` set to the final response. `HandleMessage` uses the existing SignalGraph path resolver and optional Foundation Format condenser. The module exports only `Resolve-Intelligence_CodexCLI`. Import and `Construct` do not run Codex.
+This mapped intelligence adapter runs `SendMessage` plans through a separately installed Codex CLI and returns JSON text with `choices[0].message.role = "assistant"` and `choices[0].message.content` set to the final response. `HandleMessage` uses the existing SignalGraph path resolver and optional Foundation Format condenser. `SendMessageOriginal` is unsupported and does not launch the CLI. The module exports only `Resolve-Intelligence_CodexCLI`. Import and `Construct` do not run Codex.
 
 ## Trusted jacket
 
@@ -37,6 +37,10 @@ Set `CodexCLI.AllowSavedHomeExtensions` to the Boolean `true` in the trusted jac
 The execution Signal records the CLI's captured JSONL stdout and stderr. JSONL `error` and `turn.failed` events are Critical; other JSONL events are Information. Stderr is Critical when execution fails and Information otherwise. A nonzero exit code is also recorded as Critical. These entries can contain prompt or response content and are available to Signal consumers. Capture remains subject to `MaxStderrBytes` and `MaxEventBytes`.
 
 ## Plan input and compatibility
+
+With `SchemaVersion: 2`, trusted profiles use unique `Key`, exactly one `IsDefault: true`, `Model` and `ReasoningEffort`. `SendMessage` requires exactly `Config: {Profile: {Key}, Prompt}`. `Key` explicitly selects the registered profile; the default is not substituted. `Prompt` is a nonblank scalar instruction passed unchanged to the existing UTF-8 stdin process path, with its selected model and effort in process arguments. The result remains normalized assistant JSON text. This scalar path has no v2 media attachment or image artifact result contract. Codex CLI image generation/edit remains blocked pending a proven CLI command and artifact identity, retention and cleanup lifecycle. Run `pwsh -NoProfile -File Src/Intelligence/CodexCLI/Tests/CodexV2Scalar.Tests.ps1` for its offline fixture checks.
+
+The following structured prompt and media behavior applies to the legacy jacket without `SchemaVersion: 2`.
 
 `SendMessage` accepts `Config.Prompt` as a nonblank scalar, or an object with optional `System`, ordered string `Texts`, and `Media`. Nonblank `System` is labeled and joined with text items using two newlines. If `Prompt` is absent, nonblank `Config.Content` is a legacy fallback; both together fail. Blank optional fields are omitted. A valid image-only request sends `Respond to the attached image(s).` as the prompt. `Config.ModelKey` selects a configured profile; an omitted key selects `DefaultModelKey`, while an unknown key fails. `Config.Model` is unsupported. `Config.OutputSchema` supports a flat closed draft 2020-12 object schema with scalar property types, all properties listed exactly once in `required`, and no other keywords. `Config.Break` may be null or false. Other nonempty Config options, including sampling or token controls, fail.
 

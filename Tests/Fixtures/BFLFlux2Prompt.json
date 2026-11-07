@@ -1,0 +1,122 @@
+{
+  "Cases": [
+    {
+      "Name": "ProText",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox in an autumn forest", "Media": [] },
+      "ExpectedPrompt": "A red fox in an autumn forest"
+    },
+    {
+      "Name": "FlexReference",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Flex", "RouteKey": "flux-flex", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "Use the reference palette", "Media": [
+        { "MediaType": "image", "MediaUrl": "data:image/png;base64,iVBORw0KGgo=" },
+        { "MediaType": "image", "MediaPath": "fixtures/reference-two.png" }
+      ] },
+      "ExpectedPrompt": "Use the reference palette"
+    },
+    {
+      "Name": "WrongKind",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "OpenAIResponses", "FormatKind": "OpenAIResponses" },
+      "Prompt": { "Text": "A red fox", "Media": [] }
+    },
+    {
+      "Name": "MissingText",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Media": [] }
+    },
+    {
+      "Name": "UnsupportedSystem",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "System": "hidden role", "Text": "A red fox", "Media": [] }
+    },
+    {
+      "Name": "RemoteMedia",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox", "Media": [{ "MediaType": "image", "MediaUrl": "https://example.invalid/image.png" }] }
+    },
+    {
+      "Name": "BlankText",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "   ", "Media": [] }
+    },
+    {
+      "Name": "NonStringText",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": 42, "Media": [] }
+    },
+    {
+      "Name": "WrongFormatKind",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "OpenAIResponses" },
+      "Prompt": { "Text": "A red fox", "Media": [] }
+    },
+    {
+      "Name": "WrongActivity",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "SendMessage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox", "Media": [] }
+    },
+    {
+      "Name": "SecondRemoteMedia",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox", "Media": [
+        { "MediaType": "image", "MediaPath": "fixtures/reference-one.png" },
+        { "MediaType": "image", "MediaUrl": "https://example.invalid/image.png" }
+      ] }
+    },
+    {
+      "Name": "UnsupportedSystemWithSentinel",
+      "__Rejected__": "caller-owned",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "System": "hidden role", "Text": "A red fox", "Media": [] }
+    },
+    {
+      "Name": "SecondRemoteMediaWithSentinel",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox", "Media": [
+        { "MediaType": "image", "MediaPath": "fixtures/reference-one.png" },
+        { "MediaType": "image", "MediaUrl": "https://example.invalid/image.png", "__Rejected__": "caller-owned" }
+      ] }
+    },
+    {
+      "Name": "WrongCaseApiKind",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "blackforestlabsflux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox", "Media": [] }
+    },
+    {
+      "Name": "NumericMediaPath",
+      "Selection": { "Slot": "Foundry", "TargetActivity": "GenerateImage", "ProfileKey": "Image-Pro", "RouteKey": "flux-pro", "ApiKind": "BlackForestLabsFlux2", "FormatKind": "BlackForestLabsFlux2" },
+      "Prompt": { "Text": "A red fox", "Media": [{ "MediaType": "image", "MediaPath": 42 }] }
+    },
+    {"Name":"NumericProfileKey","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":42,"RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"BlankProfileKey","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"   ","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingProfileKey","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NumericRouteKey","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":42,"ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"BlankRouteKey","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"   ","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingRouteKey","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NumericSlot","Selection":{"Slot":42,"TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"BlankSlot","Selection":{"Slot":"   ","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingSlot","Selection":{"TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingApiKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NullApiKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":null,"FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NumericApiKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":42,"FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"WrongCaseApiKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"blackforestlabsflux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingFormatKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NullFormatKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":null},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NumericFormatKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":42},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"WrongCaseFormatKind","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"blackforestlabsflux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingTargetActivity","Selection":{"Slot":"Foundry","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NullTargetActivity","Selection":{"Slot":"Foundry","TargetActivity":null,"ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"NumericTargetActivity","Selection":{"Slot":"Foundry","TargetActivity":42,"ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"WrongCaseTargetActivity","Selection":{"Slot":"Foundry","TargetActivity":"generateimage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[]}},
+    {"Name":"MissingMediaType","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaPath":"fixtures/reference.png"}]}},
+    {"Name":"NullMediaType","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":null,"MediaPath":"fixtures/reference.png"}]}},
+    {"Name":"NumericMediaType","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":42,"MediaPath":"fixtures/reference.png"}]}},
+    {"Name":"WrongCaseMediaType","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"Image","MediaPath":"fixtures/reference.png"}]}},
+    {"Name":"BlankMediaPath","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"image","MediaPath":"   "}]}},
+    {"Name":"NumericMediaUrl","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"image","MediaUrl":42}]}},
+    {"Name":"BlankMediaUrl","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"image","MediaUrl":"   "}]}},
+    {"Name":"NoMediaSource","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"image"}]}},
+    {"Name":"BothMediaSources","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"image","MediaPath":"fixtures/reference.png","MediaUrl":"data:image/png;base64,iVBORw0KGgo="}]}},
+    {"Name":"SecondNumericMediaPath","Selection":{"Slot":"Foundry","TargetActivity":"GenerateImage","ProfileKey":"Image-Pro","RouteKey":"flux-pro","ApiKind":"BlackForestLabsFlux2","FormatKind":"BlackForestLabsFlux2"},"Prompt":{"Text":"A red fox in an autumn forest","Media":[{"MediaType":"image","MediaPath":"fixtures/first.png"},{"MediaType":"image","MediaPath":42}]}}
+  ]
+}
