@@ -99,6 +99,19 @@ class Intelligence_AzureFoundry {
             $resultSignal = $null
 
             switch ($Activity) {
+                "ValidateProfiles" {
+                    if ($this.Settings.SchemaVersion -ne 2) { throw 'Foundry profile validation requires schema 2.' }
+                    $worker = Get-FoundryMember $config 'WorkerProfile'
+                    $reviewer = Get-FoundryMember $config 'ReviewerProfile'
+                    if ($worker -cne 'visual-worker-standard' -or
+                        $reviewer -cnotin @('visual-reviewer-standard','visual-reviewer-advanced') -or
+                        -not $this.Settings.Profiles.ContainsKey($worker) -or
+                        -not $this.Settings.Profiles.ContainsKey($reviewer)) {
+                        throw 'Foundry artifact profiles are invalid.'
+                    }
+                    $opSignal.SetResult($true) | Out-Null
+                    break
+                }
                 "SendMessage" {
                     $selected = $this.Settings
                     if ($this.Settings.SchemaVersion -eq 2) {
@@ -229,7 +242,7 @@ class Intelligence_AzureFoundry {
                         }
 
                         $legacyProfiles=[Collections.Generic.Dictionary[string,object]]::new([StringComparer]::Ordinal)
-                        $legacyProfiles.Add($modelKey,[pscustomobject]@{Model=$profile.Model;ReasoningEffort=$profile.ReasoningEffort;MaxInputTokens=$null})
+                        $legacyProfiles.Add($modelKey,[pscustomobject]@{Model=$profile.Model;ReasoningEffort=$profile.ReasoningEffort;MaxInputTokens=$null;ExplicitPromptCacheSupported=$profile.ExplicitPromptCacheSupported})
                         $selected=[pscustomobject]@{ApiKind='OpenAIResponses';DefaultModelKey=$modelKey;Profiles=$legacyProfiles;
                             Address=$profile.Route.Address;Credential=$profile.Route.Credential;AuthenticationMode=$profile.Route.AuthMode}
                     }

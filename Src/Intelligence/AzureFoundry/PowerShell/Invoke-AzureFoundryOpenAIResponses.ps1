@@ -136,6 +136,7 @@ function Resolve-AzureFoundryV2Settings {
             $model=Get-FoundryMember $item 'Model'
             $isDefault=Get-FoundryMember $item 'IsDefault'
             $effort=Get-FoundryMember $item 'ReasoningEffort'
+            $explicitCache=Get-FoundryMember $item 'ExplicitPromptCacheSupported'
             if ($key -isnot [string] -or -not $key.Trim() -or $profiles.ContainsKey($key) -or
                 $routeKey -isnot [string] -or -not $routes.ContainsKey($routeKey) -or
                 $model -isnot [string] -or -not $model.Trim() -or $isDefault -isnot [bool]) { throw 'Foundry profile is invalid.' }
@@ -143,12 +144,13 @@ function Resolve-AzureFoundryV2Settings {
                 if ($null -ne $effort -and ($effort -isnot [string] -or $effort -cnotin @('none','minimal','low','medium','high','xhigh','max'))) {
                     throw 'Foundry effort is invalid.'
                 }
-            } elseif ($null -ne $effort) { throw 'Foundry image profile is invalid.' }
+                if ($null -ne $explicitCache -and $explicitCache -isnot [bool]) { throw 'Foundry cache capability is invalid.' }
+            } elseif ($null -ne $effort -or $null -ne $explicitCache) { throw 'Foundry image profile is invalid.' }
             if ($isDefault) { if ($null -ne $default) {
                 throw 'Foundry default is ambiguous.' }; $default=$key
             }
 
-            $profiles.Add($key,[pscustomobject]@{Key=$key;Model=$model;Route=$routes[$routeKey];ReasoningEffort=$effort})
+            $profiles.Add($key,[pscustomobject]@{Key=$key;Model=$model;Route=$routes[$routeKey];ReasoningEffort=$effort;ExplicitPromptCacheSupported=($explicitCache -eq $true)})
         }
 
         if (-not $profiles.Count -or $null -eq $default) {
@@ -260,11 +262,30 @@ function Invoke-AzureFoundryOpenAIResponses {
         }
 
         $profile = $Settings.Profiles[$modelKey]
+        $roleSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.ProfileRole' -SignalLevel 'Information' | Select-Object -Last 1
+        if ($roleSignal.HasResult() -and -not [string]::IsNullOrWhiteSpace([string]$roleSignal.GetResult())) {
+            if ($roleSignal.GetResult() -cne 'reviewer' -or
+                $modelKey -cnotin @('text-reviewer-standard','text-reviewer-advanced','visual-reviewer-standard','visual-reviewer-advanced')) {
+                throw 'Foundry profile role is invalid.'
+            }
+        }
 
-        $systemSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.System' -SignalLevel 'Information' | Select-Object -Last 1
-        $textsSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.Texts' -SignalLevel 'Information' | Select-Object -Last 1
-        $mediaSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.Media' -SignalLevel 'Information' | Select-Object -Last 1
+        $stableSystemSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.StableSystem' -SignalLevel 'Information' | Select-Object -Last 1
+        $stableTextsSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.StableTexts' -SignalLevel 'Information' | Select-Object -Last 1
+        $stableMediaSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.StableMedia' -SignalLevel 'Information' | Select-Object -Last 1
+        $phaseSystemSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.PhaseSystem' -SignalLevel 'Information' | Select-Object -Last 1
+        $phaseTextsSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.PhaseTexts' -SignalLevel 'Information' | Select-Object -Last 1
+        $structured = $stableSystemSignal.HasResult() -or $stableTextsSignal.HasResult() -or $stableMediaSignal.HasResult() -or $phaseSystemSignal.HasResult() -or $phaseTextsSignal.HasResult()
+        $oldSystemSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.System' -SignalLevel 'Information' | Select-Object -Last 1
+        $oldTextsSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.Texts' -SignalLevel 'Information' | Select-Object -Last 1
+        $oldMediaSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Prompt.Media' -SignalLevel 'Information' | Select-Object -Last 1
         $contentSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.Content' -SignalLevel 'Information' | Select-Object -Last 1
+        if ($structured -and ($oldSystemSignal.HasResult() -or $oldTextsSignal.HasResult() -or $oldMediaSignal.HasResult() -or $contentSignal.HasResult())) {
+            throw 'Foundry prompt shapes are ambiguous.'
+        }
+        $systemSignal = if ($structured) { $stableSystemSignal } else { $oldSystemSignal }
+        $textsSignal = if ($structured) { $stableTextsSignal } else { $oldTextsSignal }
+        $mediaSignal = if ($structured) { $stableMediaSignal } else { $oldMediaSignal }
         $input = @()
         if ($systemSignal.HasResult() -and -not [string]::IsNullOrWhiteSpace([string]$systemSignal.GetResult())) {
             $input += @{ role='system'; content=[string]$systemSignal.GetResult() }
@@ -291,6 +312,9 @@ function Invoke-AzureFoundryOpenAIResponses {
         $legacyUrlSignal = Resolve-PathFromDictionary -Dictionary $Plan -Path 'Config.MediaUrl' -SignalLevel 'Information' | Select-Object -Last 1
         $legacyPath = if ($legacyPathSignal.HasResult()) { $legacyPathSignal.GetResult() } else { $null }
         $legacyUrl = if ($legacyUrlSignal.HasResult()) { $legacyUrlSignal.GetResult() } else { $null }
+        if ($structured -and (-not [string]::IsNullOrWhiteSpace([string]$legacyPath) -or -not [string]::IsNullOrWhiteSpace([string]$legacyUrl))) {
+            throw 'Foundry prompt shapes are ambiguous.'
+        }
         if (-not [string]::IsNullOrWhiteSpace([string]$legacyPath) -or -not [string]::IsNullOrWhiteSpace([string]$legacyUrl)) {
             if ($mediaItems.Count -gt 0) {
                 throw 'Foundry media sources are ambiguous.'
@@ -329,7 +353,21 @@ function Invoke-AzureFoundryOpenAIResponses {
             if (-not [string]::IsNullOrWhiteSpace([string]$url)) { $parts += @{ type='input_image'; image_url=[string]$url; detail=$detail } }
         }
 
+        if ($structured -and $profile.ExplicitPromptCacheSupported) {
+            if ($parts.Count -eq 0) { throw 'Foundry stable cache prefix is empty.' }
+            $parts[$parts.Count - 1]['prompt_cache_breakpoint'] = @{ mode='explicit' }
+        }
         if ($parts.Count -gt 0) { $input += @{ role='user'; content=$parts } }
+        if ($structured -and $phaseSystemSignal.HasResult() -and -not [string]::IsNullOrWhiteSpace([string]$phaseSystemSignal.GetResult())) {
+            $input += @{ role='system'; content=[string]$phaseSystemSignal.GetResult() }
+        }
+        if ($structured -and $phaseTextsSignal.HasResult()) {
+            $phaseParts = @()
+            foreach ($value in @($phaseTextsSignal.GetResult())) {
+                if ($null -ne $value -and -not [string]::IsNullOrWhiteSpace([string]$value)) { $phaseParts += @{ type='input_text'; text=[string]$value } }
+            }
+            if ($phaseParts.Count -gt 0) { $input += @{ role='user'; content=$phaseParts } }
+        }
         if ($input.Count -eq 0) {
             throw 'Foundry prompt is empty.'
         }
@@ -394,7 +432,10 @@ function Invoke-AzureFoundryOpenAIResponses {
             throw 'Foundry Responses output contains no assistant text.'
         }
 
-        $normalized = @{ choices=@(@{ message=@{ role='assistant'; content=($texts -join "`n") } }) } | ConvertTo-Json -Depth 8 -Compress
+        $normalizedBody = @{ choices=@(@{ message=@{ role='assistant'; content=($texts -join "`n") } }) }
+        $usageSignal = Resolve-PathFromDictionary -Dictionary $response -Path 'usage' -SignalLevel 'Information' | Select-Object -Last 1
+        if ($usageSignal.HasResult()) { $normalizedBody.usage = $usageSignal.GetResult() }
+        $normalized = $normalizedBody | ConvertTo-Json -Depth 16 -Compress
         $opSignal.SetResult($normalized) | Out-Null
         $null = $opSignal.LogInformation("Foundry model profile '$modelKey' completed.")
     }
